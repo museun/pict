@@ -1,0 +1,8 @@
+[package]
+name = "pict"
+version = "0.1.0"
+authors = ["museun <museun@outlook.com>"]
+
+[dependencies]
+winit = "0.16.2"
+winapi = "0.3.5"
