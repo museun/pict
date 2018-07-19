@@ -1,21 +1,12 @@
-use std::ffi::OsStr;
-use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
 
 pub trait ToWide {
-    fn to_wide_sized(&self) -> Vec<u16>;
     fn to_wide(&self) -> Vec<u16>;
 }
 
-impl<T> ToWide for T
-where
-    T: AsRef<OsStr>,
-{
-    fn to_wide_sized(&self) -> Vec<u16> {
-        self.as_ref().encode_wide().collect()
-    }
+impl<T: AsRef<str>> ToWide for T {
     fn to_wide(&self) -> Vec<u16> {
-        self.as_ref().encode_wide().chain(Some(0)).collect()
+        self.as_ref().encode_utf16().collect()
     }
 }
 

@@ -18,7 +18,6 @@ use winapi::um::winuser::{
 
 use app::{App, Handler};
 use listview::ListView;
-use util::*;
 
 pub struct FileList {
     window: winit::Window,
@@ -27,7 +26,7 @@ pub struct FileList {
 }
 
 impl FileList {
-    pub fn new(events: &winit::EventsLoop) -> Self {
+    pub fn new(events: &winit::EventLoop) -> Self {
         let window = winit::WindowBuilder::new()
             .with_title("filelist")
             .with_dimensions((200, 400).into())
@@ -56,11 +55,13 @@ impl FileList {
 
     pub fn show(&self) {
         debug!("showing file list");
+        self.listview.fit_list_view();
         self.window.show();
     }
 
     pub fn hide(&self) {
         debug!("hiding file list");
+        self.listview.fit_list_view();
         self.window.hide();
     }
 
@@ -79,20 +80,14 @@ impl FileList {
         self.listview.clear()
     }
 
-    pub fn populate(&self, dir: &str, files: &[String]) {
-        debug!("populating filelist from {}", dir);
+    pub fn populate(&self, dir: &str, files: &[(String, usize)]) {
+        debug!("populating ({}) filelist from {}", files.len(), dir);
         self.clear();
 
-        let images = files
-            .into_iter()
-            .filter(|s|is_accepted_image_type(*s))
-            .map(String::to_owned) // why do I need to do this?
-            .collect::<Vec<_>>();
-
+        let images = files.to_vec();
         self.set_title(&dir);
-
-        for image in &images {
-            self.listview.add_item(image, 1024 << 3);
+        for item in &images {
+            self.listview.add_item(&item.0, item.1);
         }
     }
 
@@ -104,10 +99,10 @@ impl FileList {
     pub fn align_to(&self, neighbor: HWND) {
         let hwnd = self.window.get_hwnd() as HWND;
         unsafe {
-            let mut rect = mem::uninitialized::<RECT>();
+            let mut rect = mem::zeroed::<RECT>();
             GetWindowRect(neighbor, &mut rect);
 
-            let mut list = mem::uninitialized::<RECT>();
+            let mut list = mem::zeroed::<RECT>();
             GetWindowRect(hwnd, &mut list);
 
             let mut width = list.right - list.left;
@@ -164,12 +159,9 @@ impl Handler for FileList {
                 self.on_resized();
             }
             winit::WindowEvent::Notify(lp) => {
-                trace!("on notify: {0:X}", lp);
                 self.on_notify(lp);
             }
-            _ => {
-                trace!("filelist event: {:#?}", ev);
-            }
+            _ => {}
         }
     }
 

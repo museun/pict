@@ -8,6 +8,7 @@ use winapi::shared::windef::HWND;
 
 use app::{App, Handler};
 use config::Config;
+use util::*;
 
 pub struct MainWindow {
     #[allow(dead_code)]
@@ -16,7 +17,7 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    pub fn new(events: &winit::EventsLoop, conf: &Config) -> Self {
+    pub fn new(events: &winit::EventLoop, conf: &Config) -> Self {
         // this is gonna flash while the window is being moved.
         let window = winit::WindowBuilder::new()
             .with_title("pict")
@@ -49,9 +50,20 @@ impl MainWindow {
         }
 
         let index = App::get_index();
-        let next = if index == len { 0 } else { index + 1 };
+        let next = if index + 1 == len { 0 } else { index + 1 };
         App::set_index(next);
         debug!("moving to next index: {}", next);
+
+        // let list = App::with_context(|app| {
+        //     let app = app.lock().unwrap();
+        //     let v = app
+        //         .get_list_iter()
+        //         .map(String::to_owned)
+        //         .collect::<Vec<_>>();
+        //     v
+        // });
+
+        App::get_filelist().select(next);
     }
 
     fn previous(&self) {
@@ -62,9 +74,20 @@ impl MainWindow {
         }
 
         let index = App::get_index();
-        let prev = if index == 0 { len } else { index - 1 };
+        let prev = if index == 0 { len - 1 } else { index - 1 };
         App::set_index(prev);
         debug!("moving to previous index: {}", prev);
+
+        // let list = App::with_context(|app| {
+        //     let app = app.lock().unwrap();
+        //     let v = app
+        //         .get_list_iter()
+        //         .map(String::to_owned)
+        //         .collect::<Vec<_>>();
+        //     v
+        // });
+
+        App::get_filelist().select(prev);
     }
 
     fn toggle_filelist(&self) {
@@ -167,17 +190,27 @@ impl MainWindow {
         debug!("file drop directory: {:?}", dir.to_str());
         let mut list = vec![]; // TODO set the capacity for this.
         for entry in fs::read_dir(&dir).ok()? {
-            let path = entry.ok()?.path();
+            let entry = entry.ok()?;
+            let path = entry.path();
             if !path.is_dir() {
-                list.push(path.to_str()?.to_string())
+                // this does contain path/filename
+                // let len = path.iter().collect::<Vec<_>>().len();
+                // let res = path.iter().skip(len - 2).take(1).next().unwrap();
+                // let parent: PathBuf = res.into();
+                // let file = parent.join(path.file_name()?).to_str()?.to_string();
+
+                let file = path.file_name()?.to_str()?.to_string();
+                if is_accepted_image_type(&file) {
+                    list.push((file, entry.metadata().ok()?.len() as usize));
+                }
             }
         }
-        debug!("got {} files", list.len());
 
+        debug!("got {} files", list.len());
         App::with_context(|app| {
             let app = &mut app.lock().unwrap();
-            app.set_index(0);
             app.clear_list();
+            app.set_index(0);
             app.extend_list(&list);
         });
 
@@ -202,6 +235,10 @@ impl Handler for MainWindow {
             E::DroppedFile(ref path) => {
                 self.on_drop_file(&path);
             }
+            E::CustomMove(left, top, right, bottom) => {
+                eprintln!("{},{},{},{}",left, right, top, bottom);
+            }
+
             E::Moved(pos) => self.on_moved(pos),
             E::MouseWheel {
                 delta, modifiers, ..

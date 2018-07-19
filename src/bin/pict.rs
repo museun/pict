@@ -7,6 +7,6 @@ use pict::*;
 fn main() {
     env_logger::init();
 
-    let mut app = App::new();
+    let app = App::new();
     app.run();
 }

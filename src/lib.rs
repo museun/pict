@@ -1,11 +1,15 @@
 #[macro_use]
 extern crate log;
-extern crate serde;
+
 extern crate toml;
+
+extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-extern crate winapi;
+
 extern crate winit;
+
+extern crate winapi;
 
 mod util;
 

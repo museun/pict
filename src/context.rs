@@ -15,7 +15,7 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new(events: &winit::EventsLoop, conf: &Config) -> Self {
+    pub fn new(events: &winit::EventLoop, conf: &Config) -> Self {
         Self {
             mainwindow: Rc::new(MainWindow::new(&events, &conf)),
             filelist: Rc::new(FileList::new(&events)),
@@ -57,14 +57,18 @@ impl Context {
         self.list.shrink_to_fit();
     }
 
-    pub fn extend_list(&mut self, el: &[String]) {
+    pub fn extend_list(&mut self, el: &[(String, usize)]) {
         trace!("extending list");
-        let v = el.to_vec();
+        let v = el.iter().map(|(s, _)| s.to_owned()).collect::<Vec<_>>();
         for el in &v {
             trace!("{}", el);
         }
 
-        self.list.extend(v)
+        self.list.extend_from_slice(&v)
+    }
+
+    pub fn get_list_iter(&self) -> impl Iterator<Item = &String> {
+        self.list.iter()
     }
 
     // TODO expose an iterator over the list?

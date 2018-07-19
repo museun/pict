@@ -22,11 +22,32 @@ pub trait Handler {
 }
 
 pub struct App {
-    events: winit::EventsLoop,
+    events: winit::EventLoop,
 }
 
-impl Drop for App {
-    fn drop(&mut self) {
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl App {
+    pub fn new() -> Self {
+        let config = Config::load();
+        let events = winit::EventLoop::new();
+
+        // set up a thread local reference to the context
+        APP.with(|app| {
+            let app = &mut *app.borrow_mut();
+            if app.is_none() {
+                *app = Some(Mutex::new(Context::new(&events, &config)))
+            }
+        });
+
+        Self { events }
+    }
+
+    fn save() {
         let mainwindow = Self::get_mainwindow();
         let pos = mainwindow.get_position();
         let size = mainwindow.get_size();
@@ -42,53 +63,44 @@ impl Drop for App {
             },
         }.save();
     }
-}
 
-impl Default for App {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl App {
-    pub fn new() -> Self {
-        let config = Config::load();
-        let events = winit::EventsLoop::new();
-
-        // set up a thread local reference to the context
-        APP.with(|app| {
-            let app = &mut *app.borrow_mut();
-            if app.is_none() {
-                *app = Some(Mutex::new(Context::new(&events, &config)))
-            }
-        });
-
-        Self { events }
-    }
-
-    pub fn run(&mut self) {
+    pub fn run(self) {
         let (mainwindow, filelist) = Self::with_context(|app| {
             let app = app.lock().unwrap();
             (Rc::clone(&app.mainwindow), Rc::clone(&app.filelist))
         });
 
-        let events = &mut self.events;
-        events.run_forever(|ev| match ev {
-            winit::Event::WindowEvent { event, window_id } => {
-                if window_id == mainwindow.id() {
-                    // if the mainwindow gets a closerequested, shut down the event loop
-                    if let winit::WindowEvent::CloseRequested = event {
-                        return winit::ControlFlow::Break;
-                    }
+        self.events
+            .run_forever(move |ev, _: &winit::EventLoop| match ev {
+                winit::Event::WindowEvent { event, window_id } => {
+                    if window_id == mainwindow.id() {
+                        // if the mainwindow gets a closerequested, shut down the event loop
+                        if let winit::WindowEvent::CloseRequested = event {
+                            Self::save();
+                            return winit::ControlFlow::Break;
+                        }
 
-                    mainwindow.handle(&event)
-                } else if window_id == filelist.id() {
-                    filelist.handle(&event)
+                        // if let winit::WindowEvent::CustomMove(l, t, r, b) = event {
+                        //     eprintln!("{},{},{},{}", l, t, r, b);
+                        // }
+
+                        // mainwindow.handle(&event)
+                        // } else if window_id == filelist.id() {
+                        //     filelist.handle(&event)
+                        // }
+                    }
+                    winit::ControlFlow::Continue
                 }
-                winit::ControlFlow::Continue
-            }
-            _ => winit::ControlFlow::Continue,
-        });
+                winit::Event::Suspended(ok) => {
+                    eprintln!("suspend: {}", ok);
+                    winit::ControlFlow::Continue
+                }
+                winit::Event::Awakened => {
+                    eprintln!("awakened!");
+                    winit::ControlFlow::Continue
+                }
+                _ => winit::ControlFlow::Continue,
+            });
     }
 
     pub fn get_list_len() -> usize {
