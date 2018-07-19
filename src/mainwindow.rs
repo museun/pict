@@ -3,9 +3,10 @@ use std::path::PathBuf;
 
 use winit;
 
-use app::{App, Handler, APP};
+use app::{App, Handler};
 
 pub struct MainWindow {
+    #[allow(dead_code)]
     window: winit::Window,
     id: winit::WindowId,
 }
@@ -25,30 +26,82 @@ impl MainWindow {
         Self { window, id }
     }
 
-    fn next(&self) {}
-    fn previous(&self) {}
+    fn next(&self) {
+        let len = App::get_list_len();
+        if len == 0 {
+            debug!("can't move to next index. list empty");
+            return;
+        }
+
+        App::with_context(|app| {
+            let index = { app.lock().unwrap().get_index() };
+            let index = if index == len {
+                app.lock().unwrap().set_index(0);
+                0
+            } else {
+                app.lock().unwrap().set_index(index + 1);
+                index + 1
+            };
+            debug!("moving to next index: {}", index);
+        });
+
+        App::update_filelist_index();
+    }
+
+    fn previous(&self) {
+        let len = App::get_list_len();
+        if len == 0 {
+            debug!("can't move to previous index. list empty");
+            return;
+        }
+
+        App::with_context(|app| {
+            let (index, len) = {
+                let app = app.lock().unwrap();
+                (app.get_index(), app.get_len())
+            };
+
+            if index == 0 {
+                app.lock().unwrap().set_index(len);
+            } else {
+                app.lock().unwrap().set_index(index - 1)
+            }
+            debug!("moving to previous index: {}", index);
+        });
+
+        App::update_filelist_index();
+    }
 
     fn toggle_filelist(&self) {
-        APP.with(|app| {
-            match *app.borrow() {
-                Some(ref app) => {
-                    if app.filelist.is_visible() {
-                        app.filelist.hide()
-                    } else {
-                        app.filelist.show()
-                    }
-                }
-                _ => {}
-            };
+        debug!("toggling filelist");
+        App::with_context(|app| {
+            let filelist = { &app.lock().unwrap().filelist };
+            if filelist.is_visible() {
+                filelist.hide()
+            } else {
+                filelist.show()
+            }
         });
     }
-    fn align_filelist(&self) {}
 
-    fn previous_frame(&self) {}
-    fn next_frame(&self) {}
-    fn toggle_playing(&self) {}
+    fn align_filelist(&self) {
+        debug!("aligning filelist");
+    }
 
-    fn on_key_down(&self, key: winit::VirtualKeyCode, _mods: winit::ModifiersState) {
+    fn previous_frame(&self) {
+        debug!("previous frame");
+    }
+
+    fn next_frame(&self) {
+        debug!("next frame");
+    }
+
+    fn toggle_playing(&self) {
+        debug!("toggling playing");
+    }
+
+    fn on_key_down(&self, key: winit::VirtualKeyCode, mods: winit::ModifiersState) {
+        trace!("on keydown: {:?} | {:?}", key, mods);
         match key {
             winit::VirtualKeyCode::A => self.previous(),
             winit::VirtualKeyCode::D => self.next(),
@@ -67,17 +120,17 @@ impl MainWindow {
         // middle click is for panning
         // right click will do nothing
         // left click maybe gets forwarded to containing controls?
-        eprintln!("click: {:?}, {:?}", button, mods)
+        trace!("click: {:?}, {:?}", button, mods)
     }
 
     fn on_mouse_wheel(&self, delta: winit::MouseScrollDelta, mods: winit::ModifiersState) {
         // zoom in and out
-        eprintln!("scroll: {:?}, {:?}", delta, mods)
+        trace!("scroll: {:?}, {:?}", delta, mods)
     }
 
     fn on_resize(&self, size: winit::dpi::LogicalSize) {
         // resize the canvas
-        eprintln!("resized: {:?}", size)
+        trace!("resized: {:?}", size)
     }
 
     // TODO determine if we actually need to handle errors, instead of silently bailing
@@ -88,6 +141,7 @@ impl MainWindow {
             path.parent()?
         };
 
+        debug!("file drop directory: {:?}", dir.to_str());
         let mut list = vec![]; // TODO set the capacity for this.
         for entry in fs::read_dir(&dir).ok()? {
             let path = entry.ok()?.path();
@@ -95,24 +149,27 @@ impl MainWindow {
                 list.push(path.to_str()?.to_string())
             }
         }
+        debug!("got {} files", list.len());
 
-        APP.with(|app| {
-            match *app.borrow() {
-                Some(ref app) => {
-                    app.filelist.populate(dir.to_str().unwrap(), &list);
-                }
-                _ => {}
-            };
+        App::with_context(|app| {
+            let filelist = { &app.lock().unwrap().filelist };
+            filelist.populate(dir.to_str().unwrap(), &list);
+        });
+
+        App::with_context(|app| {
+            let app = &mut app.lock().unwrap();
+            app.set_index(0);
+            app.clear_list();
+            app.extend_list(&list);
         });
 
         Some(())
     }
 }
 
-// could make this an associated type so it doesn't borrow self
 impl Handler for MainWindow {
     fn handle(&self, ev: &winit::WindowEvent) {
-        match ev {
+        match *ev {
             winit::WindowEvent::KeyboardInput { input, .. } => {
                 if input.state == winit::ElementState::Pressed {
                     if let Some(key) = input.virtual_keycode {
@@ -120,14 +177,14 @@ impl Handler for MainWindow {
                     }
                 }
             }
-            winit::WindowEvent::DroppedFile(path) => {
+            winit::WindowEvent::DroppedFile(ref path) => {
                 self.on_drop_file(&path);
             }
 
             winit::WindowEvent::MouseWheel {
                 delta, modifiers, ..
             } => {
-                self.on_mouse_wheel(*delta, *modifiers);
+                self.on_mouse_wheel(delta, modifiers);
             }
 
             winit::WindowEvent::MouseInput {
@@ -136,12 +193,12 @@ impl Handler for MainWindow {
                 modifiers,
                 ..
             } => {
-                if *state == winit::ElementState::Pressed {
-                    self.on_mouse_down(*button, *modifiers);
+                if state == winit::ElementState::Pressed {
+                    self.on_mouse_down(button, modifiers);
                 }
             }
             winit::WindowEvent::Resized(size) => {
-                self.on_resize(*size);
+                self.on_resize(size);
             }
             _ => {}
         };
