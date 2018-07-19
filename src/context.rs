@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use winit;
 
+use config::Config;
 use filelist::FileList;
 use mainwindow::MainWindow;
 
@@ -10,15 +11,17 @@ pub struct Context {
     pub filelist: Rc<FileList>,
     list: Vec<String>,
     index: usize,
+    snap: bool,
 }
 
 impl Context {
-    pub fn new(events: &winit::EventsLoop) -> Self {
+    pub fn new(events: &winit::EventsLoop, conf: &Config) -> Self {
         Self {
-            mainwindow: Rc::new(MainWindow::new(&events)),
+            mainwindow: Rc::new(MainWindow::new(&events, &conf)),
             filelist: Rc::new(FileList::new(&events)),
             list: vec![],
             index: 0,
+            snap: conf.filelist.snap,
         }
     }
 
@@ -36,6 +39,16 @@ impl Context {
     pub fn set_index(&mut self, index: usize) {
         trace!("setting index: {}", index);
         self.index = index
+    }
+
+    pub fn get_snap(&self) -> bool {
+        trace!("getting snap: {}", self.snap);
+        self.snap
+    }
+
+    pub fn set_snap(&mut self, snap: bool) {
+        trace!("setting snap: {}", snap);
+        self.snap = snap
     }
 
     pub fn clear_list(&mut self) {

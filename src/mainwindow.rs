@@ -2,8 +2,12 @@ use std::fs;
 use std::path::PathBuf;
 
 use winit;
+use winit::os::windows::WindowExt;
+
+use winapi::shared::windef::HWND;
 
 use app::{App, Handler};
+use config::Config;
 
 pub struct MainWindow {
     #[allow(dead_code)]
@@ -12,18 +16,29 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    pub fn new(events: &winit::EventsLoop) -> Self {
-        // TODO: load/save the position and size
-
+    pub fn new(events: &winit::EventsLoop, conf: &Config) -> Self {
+        // this is gonna flash while the window is being moved.
         let window = winit::WindowBuilder::new()
             .with_title("pict")
-            .with_dimensions((400, 200).into())
+            .with_dimensions((conf.size.w, conf.size.h).into())
             .with_resizable(true)
             .build(&events)
             .unwrap();
 
+        window.set_position((conf.position.x, conf.position.y).into());
+
         let id = window.id();
         Self { window, id }
+    }
+
+    pub fn get_position(&self) -> (f64, f64) {
+        let pos = self.window.get_position().expect("to get position");
+        (pos.x, pos.y)
+    }
+
+    pub fn get_size(&self) -> (f64, f64) {
+        let size = self.window.get_inner_size().expect("to get size");
+        (size.width, size.height)
     }
 
     fn next(&self) {
@@ -33,19 +48,10 @@ impl MainWindow {
             return;
         }
 
-        App::with_context(|app| {
-            let index = { app.lock().unwrap().get_index() };
-            let index = if index == len {
-                app.lock().unwrap().set_index(0);
-                0
-            } else {
-                app.lock().unwrap().set_index(index + 1);
-                index + 1
-            };
-            debug!("moving to next index: {}", index);
-        });
-
-        App::update_filelist_index();
+        let index = App::get_index();
+        let next = if index == len { 0 } else { index + 1 };
+        App::set_index(next);
+        debug!("moving to next index: {}", next);
     }
 
     fn previous(&self) {
@@ -55,37 +61,42 @@ impl MainWindow {
             return;
         }
 
-        App::with_context(|app| {
-            let (index, len) = {
-                let app = app.lock().unwrap();
-                (app.get_index(), app.get_len())
-            };
-
-            if index == 0 {
-                app.lock().unwrap().set_index(len);
-            } else {
-                app.lock().unwrap().set_index(index - 1)
-            }
-            debug!("moving to previous index: {}", index);
-        });
-
-        App::update_filelist_index();
+        let index = App::get_index();
+        let prev = if index == 0 { len } else { index - 1 };
+        App::set_index(prev);
+        debug!("moving to previous index: {}", prev);
     }
 
     fn toggle_filelist(&self) {
         debug!("toggling filelist");
-        App::with_context(|app| {
-            let filelist = { &app.lock().unwrap().filelist };
-            if filelist.is_visible() {
-                filelist.hide()
-            } else {
-                filelist.show()
-            }
-        });
+        let filelist = App::get_filelist();
+        if filelist.is_visible() {
+            filelist.hide()
+        } else {
+            filelist.show()
+        }
     }
 
     fn align_filelist(&self) {
         debug!("aligning filelist");
+        App::get_filelist().align_to(self.window.get_hwnd() as HWND);
+        App::with_context(|app| {
+            let mut app = app.lock().unwrap();
+            let snap = app.get_snap();
+            app.set_snap(!snap);
+        })
+    }
+
+    fn scale(&self, key: winit::VirtualKeyCode) {
+        let n = match key {
+            winit::VirtualKeyCode::Key1 => 0.5,
+            winit::VirtualKeyCode::Key2 => 1.0,
+            winit::VirtualKeyCode::Key3 => 1.5,
+            winit::VirtualKeyCode::Key4 => 2.0,
+            _ => unreachable!(),
+        };
+
+        debug!("scaling to {:?}", n);
     }
 
     fn previous_frame(&self) {
@@ -107,6 +118,11 @@ impl MainWindow {
             winit::VirtualKeyCode::D => self.next(),
             winit::VirtualKeyCode::L => self.toggle_filelist(),
             winit::VirtualKeyCode::K => self.align_filelist(),
+
+            winit::VirtualKeyCode::Key1
+            | winit::VirtualKeyCode::Key2
+            | winit::VirtualKeyCode::Key3
+            | winit::VirtualKeyCode::Key4 => self.scale(key),
 
             // for animated images
             winit::VirtualKeyCode::Left => self.previous_frame(),
@@ -133,6 +149,13 @@ impl MainWindow {
         trace!("resized: {:?}", size)
     }
 
+    fn on_moved(&self, pos: winit::dpi::LogicalPosition) {
+        trace!("moved: {:?}", pos);
+        if App::with_context(|app| app.lock().unwrap().get_snap()) {
+            App::get_filelist().align_to(self.window.get_hwnd() as HWND);
+        }
+    }
+
     // TODO determine if we actually need to handle errors, instead of silently bailing
     fn on_drop_file(&self, path: &PathBuf) -> Option<()> {
         let dir = if path.is_dir() {
@@ -152,16 +175,13 @@ impl MainWindow {
         debug!("got {} files", list.len());
 
         App::with_context(|app| {
-            let filelist = { &app.lock().unwrap().filelist };
-            filelist.populate(dir.to_str().unwrap(), &list);
-        });
-
-        App::with_context(|app| {
             let app = &mut app.lock().unwrap();
             app.set_index(0);
             app.clear_list();
             app.extend_list(&list);
         });
+
+        App::get_filelist().populate(dir.to_str().unwrap(), &list);
 
         Some(())
     }
@@ -169,25 +189,24 @@ impl MainWindow {
 
 impl Handler for MainWindow {
     fn handle(&self, ev: &winit::WindowEvent) {
+        use winit::WindowEvent as E;
+
         match *ev {
-            winit::WindowEvent::KeyboardInput { input, .. } => {
+            E::KeyboardInput { input, .. } => {
                 if input.state == winit::ElementState::Pressed {
                     if let Some(key) = input.virtual_keycode {
                         self.on_key_down(key, input.modifiers);
                     }
                 }
             }
-            winit::WindowEvent::DroppedFile(ref path) => {
+            E::DroppedFile(ref path) => {
                 self.on_drop_file(&path);
             }
-
-            winit::WindowEvent::MouseWheel {
+            E::Moved(pos) => self.on_moved(pos),
+            E::MouseWheel {
                 delta, modifiers, ..
-            } => {
-                self.on_mouse_wheel(delta, modifiers);
-            }
-
-            winit::WindowEvent::MouseInput {
+            } => self.on_mouse_wheel(delta, modifiers),
+            E::MouseInput {
                 state,
                 button,
                 modifiers,
@@ -197,14 +216,16 @@ impl Handler for MainWindow {
                     self.on_mouse_down(button, modifiers);
                 }
             }
-            winit::WindowEvent::Resized(size) => {
-                self.on_resize(size);
-            }
+            E::Resized(size) => self.on_resize(size),
             _ => {}
         };
     }
 
     fn id(&self) -> winit::WindowId {
         self.id
+    }
+
+    fn hwnd(&self) -> HWND {
+        self.window.get_hwnd() as HWND
     }
 }

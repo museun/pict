@@ -4,6 +4,9 @@ use std::sync::Mutex;
 
 use winit;
 
+use winapi::shared::windef::HWND;
+
+use config::{self, Config, Position, Size};
 use context::Context;
 use filelist::FileList;
 use mainwindow::MainWindow;
@@ -15,10 +18,30 @@ thread_local!{
 pub trait Handler {
     fn handle(&self, ev: &winit::WindowEvent);
     fn id(&self) -> winit::WindowId;
+    fn hwnd(&self) -> HWND;
 }
 
 pub struct App {
     events: winit::EventsLoop,
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        let mainwindow = Self::get_mainwindow();
+        let pos = mainwindow.get_position();
+        let size = mainwindow.get_size();
+
+        Config {
+            position: Position { x: pos.0, y: pos.1 },
+            size: Size {
+                w: size.0,
+                h: size.1,
+            },
+            filelist: config::FileList {
+                snap: App::with_context(|app| app.lock().unwrap().get_snap()),
+            },
+        }.save();
+    }
 }
 
 impl Default for App {
@@ -29,19 +52,21 @@ impl Default for App {
 
 impl App {
     pub fn new() -> Self {
+        let config = Config::load();
         let events = winit::EventsLoop::new();
+
+        // set up a thread local reference to the context
+        APP.with(|app| {
+            let app = &mut *app.borrow_mut();
+            if app.is_none() {
+                *app = Some(Mutex::new(Context::new(&events, &config)))
+            }
+        });
+
         Self { events }
     }
 
     pub fn run(&mut self) {
-        // this is a special case
-        APP.with(|app| {
-            let app = &mut *app.borrow_mut();
-            if app.is_none() {
-                *app = Some(Mutex::new(Context::new(&self.events)))
-            }
-        });
-
         let (mainwindow, filelist) = Self::with_context(|app| {
             let app = app.lock().unwrap();
             (Rc::clone(&app.mainwindow), Rc::clone(&app.filelist))
@@ -66,20 +91,15 @@ impl App {
         });
     }
 
-    pub fn update_filelist_index() {
-        Self::with_context(|app| {
-            let (filelist, index) = {
-                let app = app.lock().unwrap();
-                (Rc::clone(&app.filelist), app.get_index())
-            };
-
-            trace!("selecting index");
-            filelist.select(index);
-        });
-    }
-
     pub fn get_list_len() -> usize {
         Self::with_context(|app| app.lock().unwrap().get_len())
+    }
+
+    pub fn get_index() -> usize {
+        Self::with_context(|app| app.lock().unwrap().get_index())
+    }
+    pub fn set_index(index: usize) {
+        Self::with_context(|app| app.lock().unwrap().set_index(index))
     }
 
     pub fn get_filelist() -> Rc<FileList> {
