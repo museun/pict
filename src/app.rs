@@ -1,10 +1,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Mutex;
+use std::{mem, ptr};
 
-use winit;
-
-use winapi::shared::windef::HWND;
+use winapi::shared::{minwindef, windef};
+use winapi::um::winuser;
 
 use config::{self, Config, Position, Size};
 use context::Context;
@@ -15,92 +15,98 @@ thread_local!{
     pub static APP: RefCell<Option<Mutex<Context>>> = RefCell::new(None);
 }
 
-pub trait Handler {
-    fn handle(&self, ev: &winit::WindowEvent);
-    fn id(&self) -> winit::WindowId;
-    fn hwnd(&self) -> HWND;
-}
-
 pub struct App {
-    events: winit::EventLoop,
+    mainwindow: windef::HWND,
+    filelist: windef::HWND,
 }
 
 impl Default for App {
     fn default() -> Self {
-        Self::new()
+        App::new()
     }
 }
 
 impl App {
     pub fn new() -> Self {
         let config = Config::load();
-        let events = winit::EventLoop::new();
 
         // set up a thread local reference to the context
         APP.with(|app| {
             let app = &mut *app.borrow_mut();
             if app.is_none() {
-                *app = Some(Mutex::new(Context::new(&events, &config)))
+                *app = Some(Mutex::new(Context::new(&config)))
             }
         });
 
-        Self { events }
+        let (mainwindow, filelist) = App::with_context(|app| {
+            let app = app.lock().unwrap();
+            (app.mainwindow.hwnd(), app.filelist.hwnd())
+        });
+
+        Self {
+            mainwindow,
+            filelist,
+        }
+    }
+
+    pub unsafe extern "system" fn wndproc(
+        hwnd: windef::HWND,
+        msg: minwindef::UINT,
+        wp: minwindef::WPARAM,
+        lp: minwindef::LPARAM,
+    ) -> minwindef::LRESULT {
+        trace!("hwnd: {:?}, {}", hwnd, msg);
+
+        let ctx = winuser::GetWindowLongPtrW(hwnd, winuser::GWLP_USERDATA);
+        if ctx == 0 {
+            if winuser::WM_CREATE == msg {
+                let cs: &mut winuser::CREATESTRUCTW = mem::transmute(lp);
+                winuser::SetWindowLongPtrW(
+                    hwnd,
+                    winuser::GWLP_USERDATA,
+                    cs.lpCreateParams as isize,
+                );
+            }
+            return winuser::DefWindowProcW(hwnd, msg, wp, lp);
+        }
+
+        use winapi::um::winuser::*;
+        match msg {
+            WM_DESTROY => {
+                winuser::PostQuitMessage(0);
+                0
+            }
+            _ => winuser::DefWindowProcW(hwnd, msg, wp, lp),
+        }
     }
 
     fn save() {
-        let mainwindow = Self::get_mainwindow();
-        let pos = mainwindow.get_position();
-        let size = mainwindow.get_size();
+        // let mainwindow = Self::get_mainwindow();
 
-        Config {
-            position: Position { x: pos.0, y: pos.1 },
-            size: Size {
-                w: size.0,
-                h: size.1,
-            },
-            filelist: config::FileList {
-                snap: App::with_context(|app| app.lock().unwrap().get_snap()),
-            },
-        }.save();
+        // Config {
+        //     position: Position { x: pos.0, y: pos.1 },
+        //     size: Size {
+        //         w: size.0 as i32,
+        //         h: size.1 as i32,
+        //     },
+        //     filelist: config::FileList {
+        //         snap: App::with_context(|app| app.lock().unwrap().get_snap()),
+        //     },
+        // }.save();
     }
 
     pub fn run(self) {
-        let (mainwindow, filelist) = Self::with_context(|app| {
-            let app = app.lock().unwrap();
-            (Rc::clone(&app.mainwindow), Rc::clone(&app.filelist))
-        });
-
-        self.events
-            .run_forever(move |ev, _: &winit::EventLoop| match ev {
-                winit::Event::WindowEvent { event, window_id } => {
-                    if window_id == mainwindow.id() {
-                        // if the mainwindow gets a closerequested, shut down the event loop
-                        if let winit::WindowEvent::CloseRequested = event {
-                            Self::save();
-                            return winit::ControlFlow::Break;
-                        }
-
-                        // if let winit::WindowEvent::CustomMove(l, t, r, b) = event {
-                        //     eprintln!("{},{},{},{}", l, t, r, b);
-                        // }
-
-                        // mainwindow.handle(&event)
-                        // } else if window_id == filelist.id() {
-                        //     filelist.handle(&event)
-                        // }
-                    }
-                    winit::ControlFlow::Continue
+        unsafe {
+            loop {
+                let mut msg = mem::uninitialized();
+                if winuser::GetMessageW(&mut msg, ptr::null_mut(), 0, 0) <= 0 {
+                    error!("no message to get!");
+                    return;
                 }
-                winit::Event::Suspended(ok) => {
-                    eprintln!("suspend: {}", ok);
-                    winit::ControlFlow::Continue
-                }
-                winit::Event::Awakened => {
-                    eprintln!("awakened!");
-                    winit::ControlFlow::Continue
-                }
-                _ => winit::ControlFlow::Continue,
-            });
+                winuser::TranslateMessage(&msg);
+                winuser::DispatchMessageW(&msg);
+            }
+        }
     }
 
     pub fn get_list_len() -> usize {
@@ -110,6 +116,7 @@ impl App {
     pub fn get_index() -> usize {
         Self::with_context(|app| app.lock().unwrap().get_index())
     }
+
     pub fn set_index(index: usize) {
         Self::with_context(|app| app.lock().unwrap().set_index(index))
     }

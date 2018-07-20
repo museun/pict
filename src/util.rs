@@ -1,4 +1,8 @@
 use std::path::PathBuf;
+use std::ptr;
+
+use winapi::shared::minwindef;
+use winapi::um::libloaderapi;
 
 pub trait ToWide {
     fn to_wide(&self) -> Vec<u16>;
@@ -6,7 +10,42 @@ pub trait ToWide {
 
 impl<T: AsRef<str>> ToWide for T {
     fn to_wide(&self) -> Vec<u16> {
-        self.as_ref().encode_utf16().collect()
+        if self.as_ref().is_empty() {
+            return "\0".encode_utf16().collect();
+        }
+
+        let mut s = self.as_ref().to_owned();
+        let c = s.chars().rev().take(1).next().unwrap();
+        if c != '\0' {
+            s += "\0"
+        };
+        s.encode_utf16().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_string_non_null() {
+        let s = "this is a test";
+        let w = s.to_wide();
+        assert_eq!(s.len() + 1, w.len());
+    }
+
+    #[test]
+    fn test_string_empty_non_null() {
+        let s = "";
+        let w = s.to_wide();
+        assert_eq!(s.len() + 1, w.len(), "{},{}", s.len(), w.len());
+    }
+
+    #[test]
+    fn test_string_null() {
+        let s = "this is a test\0";
+        let w = s.to_wide();
+        assert_eq!(s.len(), w.len());
     }
 }
 
@@ -37,4 +76,8 @@ pub fn is_accepted_image_type<P: Into<PathBuf>>(path: P) -> bool {
         None
     }
     find(&path.into()).is_some()
+}
+
+pub fn hinstance() -> minwindef::HINSTANCE {
+    unsafe { libloaderapi::GetModuleHandleW(ptr::null_mut()) }
 }

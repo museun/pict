@@ -14,14 +14,14 @@ pub struct Config {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Position {
-    pub x: f64,
-    pub y: f64,
+    pub x: i32,
+    pub y: i32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Size {
-    pub w: f64,
-    pub h: f64,
+    pub w: i32,
+    pub h: i32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -40,8 +40,8 @@ impl Config {
             .or_else(|| {
                 info!("creating default config");
                 Some(Self {
-                    position: Position { x: 0.0, y: 0.0 },
-                    size: Size { w: 400.0, h: 200.0 },
+                    position: Position { x: 0, y: 0 },
+                    size: Size { w: 400, h: 200 },
                     filelist: FileList::default(),
                 })
             })

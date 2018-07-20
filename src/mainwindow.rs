@@ -1,45 +1,53 @@
 use std::fs;
 use std::path::PathBuf;
+use std::{mem, ptr};
 
-use winit;
-use winit::os::windows::WindowExt;
+use winapi::shared::{minwindef, windef};
+use winapi::um::{commctrl, winuser};
 
-use winapi::shared::windef::HWND;
-
-use app::{App, Handler};
+use app::App;
+use class::Class;
 use config::Config;
+use error::*;
+use event::{self, *};
 use util::*;
+use window::{Params, Window};
 
+lazy_static! {
+    pub static ref MAIN_WINDOW_CLASS: Vec<u16> = {
+        let name = "PictMainWindowClass".to_wide();
+        Class::create(name.as_ptr());
+        name
+    };
+}
+
+#[repr(C)]
 pub struct MainWindow {
-    #[allow(dead_code)]
-    window: winit::Window,
-    id: winit::WindowId,
+    window: Window,
 }
 
 impl MainWindow {
-    pub fn new(events: &winit::EventLoop, conf: &Config) -> Self {
-        // this is gonna flash while the window is being moved.
-        let window = winit::WindowBuilder::new()
-            .with_title("pict")
-            .with_dimensions((conf.size.w, conf.size.h).into())
-            .with_resizable(true)
-            .build(&events)
-            .unwrap();
+    pub fn new(conf: &Config) -> Self {
+        let x = conf.position.x;
+        let y = conf.position.y;
+        let w = conf.size.w;
+        let h = conf.size.h;
 
-        window.set_position((conf.position.x, conf.position.y).into());
+        let params = Params::builder().x(x).y(y).width(w).height(h)
+        .class_name(MAIN_WINDOW_CLASS.as_ptr())
+        .window_name("pict".to_wide().as_ptr())
+        .style(winuser::WS_TILEDWINDOW) // what styles do I need?
+        .ex_style(winuser::WS_EX_APPWINDOW | winuser::WS_EX_ACCEPTFILES)
+        .build();
 
-        let id = window.id();
-        Self { window, id }
+        let window = Window::new(params);
+        window.show(); // nShowCmd what do
+
+        Self { window }
     }
 
-    pub fn get_position(&self) -> (f64, f64) {
-        let pos = self.window.get_position().expect("to get position");
-        (pos.x, pos.y)
-    }
-
-    pub fn get_size(&self) -> (f64, f64) {
-        let size = self.window.get_inner_size().expect("to get size");
-        (size.width, size.height)
+    pub fn hwnd(&self) -> windef::HWND {
+        self.window.hwnd()
     }
 
     fn next(&self) {
@@ -53,15 +61,6 @@ impl MainWindow {
         let next = if index + 1 == len { 0 } else { index + 1 };
         App::set_index(next);
         debug!("moving to next index: {}", next);
-
-        // let list = App::with_context(|app| {
-        //     let app = app.lock().unwrap();
-        //     let v = app
-        //         .get_list_iter()
-        //         .map(String::to_owned)
-        //         .collect::<Vec<_>>();
-        //     v
-        // });
 
         App::get_filelist().select(next);
     }
@@ -78,15 +77,6 @@ impl MainWindow {
         App::set_index(prev);
         debug!("moving to previous index: {}", prev);
 
-        // let list = App::with_context(|app| {
-        //     let app = app.lock().unwrap();
-        //     let v = app
-        //         .get_list_iter()
-        //         .map(String::to_owned)
-        //         .collect::<Vec<_>>();
-        //     v
-        // });
-
         App::get_filelist().select(prev);
     }
 
@@ -102,7 +92,7 @@ impl MainWindow {
 
     fn align_filelist(&self) {
         debug!("aligning filelist");
-        App::get_filelist().align_to(self.window.get_hwnd() as HWND);
+        App::get_filelist().align_to(self.hwnd());
         App::with_context(|app| {
             let mut app = app.lock().unwrap();
             let snap = app.get_snap();
@@ -110,12 +100,12 @@ impl MainWindow {
         })
     }
 
-    fn scale(&self, key: winit::VirtualKeyCode) {
+    fn scale(&self, key: event::Key) {
         let n = match key {
-            winit::VirtualKeyCode::Key1 => 0.5,
-            winit::VirtualKeyCode::Key2 => 1.0,
-            winit::VirtualKeyCode::Key3 => 1.5,
-            winit::VirtualKeyCode::Key4 => 2.0,
+            Key::Key1 => 0.5,
+            Key::Key2 => 1.0,
+            Key::Key3 => 1.5,
+            Key::Key4 => 2.0,
             _ => unreachable!(),
         };
 
@@ -134,48 +124,45 @@ impl MainWindow {
         debug!("toggling playing");
     }
 
-    fn on_key_down(&self, key: winit::VirtualKeyCode, mods: winit::ModifiersState) {
-        trace!("on keydown: {:?} | {:?}", key, mods);
+    fn on_key_down(&self, key: event::Key) {
+        trace!("on keydown: {:?}", key);
         match key {
-            winit::VirtualKeyCode::A => self.previous(),
-            winit::VirtualKeyCode::D => self.next(),
-            winit::VirtualKeyCode::L => self.toggle_filelist(),
-            winit::VirtualKeyCode::K => self.align_filelist(),
+            Key::A => self.previous(),
+            Key::D => self.next(),
+            Key::L => self.toggle_filelist(),
+            Key::K => self.align_filelist(),
 
-            winit::VirtualKeyCode::Key1
-            | winit::VirtualKeyCode::Key2
-            | winit::VirtualKeyCode::Key3
-            | winit::VirtualKeyCode::Key4 => self.scale(key),
+            Key::Key1 | Key::Key2 | Key::Key3 | Key::Key4 => self.scale(key),
 
             // for animated images
-            winit::VirtualKeyCode::Left => self.previous_frame(),
-            winit::VirtualKeyCode::Right => self.next_frame(),
-            winit::VirtualKeyCode::Space => self.toggle_playing(),
+            Key::Left => self.previous_frame(),
+            Key::Right => self.next_frame(),
+            Key::Space => self.toggle_playing(),
             _ => {}
         }
     }
 
-    fn on_mouse_down(&self, button: winit::MouseButton, mods: winit::ModifiersState) {
+    fn on_mouse_down(&self, button: event::MouseButton) {
         // middle click is for panning
         // right click will do nothing
         // left click maybe gets forwarded to containing controls?
-        trace!("click: {:?}, {:?}", button, mods)
+        trace!("click: {:?}", button)
     }
 
-    fn on_mouse_wheel(&self, delta: winit::MouseScrollDelta, mods: winit::ModifiersState) {
+    fn on_mouse_wheel(&self, delta: i32) {
         // zoom in and out
-        trace!("scroll: {:?}, {:?}", delta, mods)
+        trace!("scroll: {:?}", delta)
     }
 
-    fn on_resize(&self, size: winit::dpi::LogicalSize) {
+    fn on_resize(&self, size: (f32, f32)) {
         // resize the canvas
         trace!("resized: {:?}", size)
     }
 
-    fn on_moved(&self, pos: winit::dpi::LogicalPosition) {
+    fn on_moved(&self, pos: (f32, f32)) {
         trace!("moved: {:?}", pos);
         if App::with_context(|app| app.lock().unwrap().get_snap()) {
-            App::get_filelist().align_to(self.window.get_hwnd() as HWND);
+            App::get_filelist().align_to(self.hwnd());
         }
     }
 
@@ -218,51 +205,61 @@ impl MainWindow {
 
         Some(())
     }
+
+    unsafe extern "system" fn wndproc(
+        hwnd: windef::HWND,
+        msg: minwindef::UINT,
+        wp: minwindef::WPARAM,
+        lp: minwindef::LPARAM,
+        id: usize,
+        data: usize,
+    ) -> minwindef::LRESULT {
+        use winapi::um::winuser::*;
+
+        match msg {
+            WM_NCDESTROY => {
+                if commctrl::RemoveWindowSubclass(hwnd, Some(MainWindow::wndproc), id) != 0 {
+                    let err = get_last_windows_error();
+                    error!("cannot removed windowsubclass: {}", err)
+                }
+                commctrl::DefSubclassProc(hwnd, msg, wp, lp)
+            }
+            _ => commctrl::DefSubclassProc(hwnd, msg, wp, lp),
+        }
+    }
 }
 
-impl Handler for MainWindow {
-    fn handle(&self, ev: &winit::WindowEvent) {
-        use winit::WindowEvent as E;
+// use winit::WindowEvent as E;
 
-        match *ev {
-            E::KeyboardInput { input, .. } => {
-                if input.state == winit::ElementState::Pressed {
-                    if let Some(key) = input.virtual_keycode {
-                        self.on_key_down(key, input.modifiers);
-                    }
-                }
-            }
-            E::DroppedFile(ref path) => {
-                self.on_drop_file(&path);
-            }
-            E::CustomMove(left, top, right, bottom) => {
-                eprintln!("{},{},{},{}",left, right, top, bottom);
-            }
+// match *ev {
+//     E::KeyboardInput { input, .. } => {
+//         if input.state == winit::ElementState::Pressed {
+//             if let Some(key) = input.virtual_keycode {
+//                 self.on_key_down(key, input.modifiers);
+//             }
+//         }
+//     }
+//     E::DroppedFile(ref path) => {
+//         self.on_drop_file(&path);
+//     }
+//     E::CustomMove(left, top, right, bottom) => {
+//         eprintln!("{},{},{},{}", left, right, top, bottom);
+//     }
 
-            E::Moved(pos) => self.on_moved(pos),
-            E::MouseWheel {
-                delta, modifiers, ..
-            } => self.on_mouse_wheel(delta, modifiers),
-            E::MouseInput {
-                state,
-                button,
-                modifiers,
-                ..
-            } => {
-                if state == winit::ElementState::Pressed {
-                    self.on_mouse_down(button, modifiers);
-                }
-            }
-            E::Resized(size) => self.on_resize(size),
-            _ => {}
-        };
-    }
-
-    fn id(&self) -> winit::WindowId {
-        self.id
-    }
-
-    fn hwnd(&self) -> HWND {
-        self.window.get_hwnd() as HWND
-    }
-}
+//     E::Moved(pos) => self.on_moved(pos),
+//     E::MouseWheel {
+//         delta, modifiers, ..
+//     } => self.on_mouse_wheel(delta, modifiers),
+//     E::MouseInput {
+//         state,
+//         button,
+//         modifiers,
+//         ..
+//     } => {
+//         if state == winit::ElementState::Pressed {
+//             self.on_mouse_down(button, modifiers);
+//         }
+//     }
+//     E::Resized(size) => self.on_resize(size),
+//     _ => {}
+// };

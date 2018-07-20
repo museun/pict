@@ -2,55 +2,49 @@ use std::mem;
 use std::ptr;
 use std::str;
 
-use winit;
-use winit::os::windows::WindowExt;
+use winapi::shared::windef;
+use winapi::um::winuser;
 
-use winapi::shared::windef::{HWND, RECT};
-use winapi::um::commctrl::{
-    LVIS_SELECTED, LVN_ITEMACTIVATE, LVN_ITEMCHANGED, NMITEMACTIVATE, NMLISTVIEW, NM_CLICK,
-    NM_RETURN, NM_SETFOCUS,
-};
-
-use winapi::um::winuser::{
-    GetWindowRect, IsWindowVisible, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_NOACTIVATE,
-    WS_EX_TOOLWINDOW,
-};
-
-use app::{App, Handler};
+use app::App;
+use class::Class;
 use listview::ListView;
+use util::*;
+use window::{Params, Window};
+
+lazy_static! {
+    pub static ref FILE_WINDOW_CLASS: Vec<u16> = {
+        let name = "PictFileListClass".to_wide();
+        Class::create(name.as_ptr());
+        name
+    };
+}
 
 pub struct FileList {
-    window: winit::Window,
-    id: winit::WindowId,
+    window: Window,
     listview: ListView,
 }
 
 impl FileList {
-    pub fn new(events: &winit::EventLoop) -> Self {
-        let window = winit::WindowBuilder::new()
-            .with_title("filelist")
-            .with_dimensions((200, 400).into())
-            .with_resizable(true)
-            .build(&events)
-            .unwrap();
+    pub fn new() -> Self {
+        let params = Params::builder()
+            .class_name(FILE_WINDOW_CLASS.as_ptr())
+            .window_name("filelist".to_wide().as_ptr())
+            .ex_style(winuser::WS_EX_TOOLWINDOW)
+            .style(winuser::WS_TILEDWINDOW)
+            .width(200)
+            .height(400)
+            .build();
 
-        // set the filelist to be a tool window
-        unsafe {
-            let hwnd = window.get_hwnd() as HWND;
-            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, WS_EX_TOOLWINDOW as isize);
-        };
+        let window = Window::new(params);
 
-        window.hide();
-        let id = window.id();
-
-        let listview = ListView::new(window.get_hwnd() as HWND);
+        let listview = ListView::new(window.hwnd());
         listview.fit_list_view();
 
-        Self {
-            window,
-            id,
-            listview,
-        }
+        Self { listview, window }
+    }
+
+    pub fn hwnd(&self) -> windef::HWND {
+        self.window.hwnd()
     }
 
     pub fn show(&self) {
@@ -67,7 +61,7 @@ impl FileList {
 
     pub fn is_visible(&self) -> bool {
         debug!("checking visibility of filelist");
-        unsafe { IsWindowVisible(self.hwnd()) == 1 }
+        unsafe { winuser::IsWindowVisible(self.window.hwnd()) == 1 }
     }
 
     pub fn select(&self, index: usize) {
@@ -91,33 +85,36 @@ impl FileList {
         }
     }
 
-    pub fn set_title(&self, name: &str) {
-        debug!("setting title {}", name);
-        self.window.set_title(name);
+    pub fn set_title(&self, title: &str) {
+        debug!("setting title {}", title);
+
+        unsafe {
+            winuser::SetWindowTextW(self.window.hwnd(), title.to_wide().as_ptr());
+        }
     }
 
-    pub fn align_to(&self, neighbor: HWND) {
-        let hwnd = self.window.get_hwnd() as HWND;
+    pub fn align_to(&self, neighbor: windef::HWND) {
+        let hwnd = self.window.hwnd();
         unsafe {
-            let mut rect = mem::zeroed::<RECT>();
-            GetWindowRect(neighbor, &mut rect);
+            let mut rect = mem::zeroed::<windef::RECT>();
+            winuser::GetWindowRect(neighbor, &mut rect);
 
-            let mut list = mem::zeroed::<RECT>();
-            GetWindowRect(hwnd, &mut list);
+            let mut list = mem::zeroed::<windef::RECT>();
+            winuser::GetWindowRect(hwnd, &mut list);
 
             let mut width = list.right - list.left;
             if width == 0 {
                 width = 200;
             }
 
-            SetWindowPos(
+            winuser::SetWindowPos(
                 hwnd,
                 ptr::null_mut(),
                 rect.left - width,
                 rect.top,
                 width,
                 list.bottom - list.top,
-                SWP_NOACTIVATE,
+                winuser::SWP_NOACTIVATE,
             );
         }
     }
@@ -127,9 +124,14 @@ impl FileList {
     }
 
     fn on_notify(&self, lp: isize) {
+        use winapi::um::commctrl::{
+            LVIS_SELECTED, LVN_ITEMACTIVATE, LVN_ITEMCHANGED, NMITEMACTIVATE, NMLISTVIEW, NM_CLICK,
+            NM_RETURN, NM_SETFOCUS,
+        };
+
         unsafe {
             let pnmlv = *(lp as *mut NMLISTVIEW);
-            if pnmlv.hdr.hwndFrom != self.hwnd() {
+            if pnmlv.hdr.hwndFrom != self.window.hwnd() {
                 return;
             }
             match pnmlv.hdr.code {
@@ -146,30 +148,5 @@ impl FileList {
                 _ => return,
             }
         };
-    }
-}
-
-impl Handler for FileList {
-    fn handle(&self, ev: &winit::WindowEvent) {
-        match *ev {
-            winit::WindowEvent::CloseRequested => {
-                self.hide();
-            }
-            winit::WindowEvent::Resized(_) => {
-                self.on_resized();
-            }
-            winit::WindowEvent::Notify(lp) => {
-                self.on_notify(lp);
-            }
-            _ => {}
-        }
-    }
-
-    fn id(&self) -> winit::WindowId {
-        self.id
-    }
-
-    fn hwnd(&self) -> HWND {
-        self.window.get_hwnd() as HWND
     }
 }

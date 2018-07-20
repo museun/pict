@@ -12,3 +12,5 @@ winapi = {version = "0.3.5", features = ["winuser", "windef", "commctrl"]}
 toml = "0.4.6"
 serde = "1.0.70"
 serde_derive = "1.0.70"
+typed-builder = "0.1.0"
+lazy_static = "1.0.2"

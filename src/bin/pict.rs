@@ -1,5 +1,4 @@
 extern crate env_logger;
-extern crate winit;
 
 extern crate pict;
 use pict::*;

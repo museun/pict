@@ -1,7 +1,5 @@
 use std::rc::Rc;
 
-use winit;
-
 use config::Config;
 use filelist::FileList;
 use mainwindow::MainWindow;
@@ -15,10 +13,10 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new(events: &winit::EventLoop, conf: &Config) -> Self {
+    pub fn new(conf: &Config) -> Self {
         Self {
-            mainwindow: Rc::new(MainWindow::new(&events, &conf)),
-            filelist: Rc::new(FileList::new(&events)),
+            mainwindow: Rc::new(MainWindow::new(&conf)),
+            filelist: Rc::new(FileList::new()),
             list: vec![],
             index: 0,
             snap: conf.filelist.snap,
