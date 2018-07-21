@@ -6,6 +6,12 @@ pub struct Context {
     snap: bool,
 }
 
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Context {
     pub fn new() -> Self {
         let conf = Config::get();
