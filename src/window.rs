@@ -27,12 +27,35 @@ impl Window {
         unsafe { winuser::ShowWindow(self.hwnd(), winuser::SW_HIDE) };
     }
 
-    /// w,h
+    /// w,h in client coords
     pub fn get_size(&self) -> (i32, i32) {
         unsafe {
             let mut rect: windef::RECT = mem::zeroed();
             winuser::GetClientRect(self.hwnd(), &mut rect);
             (rect.right, rect.bottom)
+        }
+    }
+
+    /// w,h in window coords
+    pub fn get_size_win(&self) -> (i32, i32) {
+        unsafe {
+            let mut rect: windef::RECT = mem::zeroed();
+            winuser::GetWindowRect(self.hwnd(), &mut rect);
+            (rect.right - rect.left, rect.bottom - rect.top)
+        }
+    }
+
+    pub fn set_size(&self, w: i32, h: i32) {
+        unsafe {
+            winuser::SetWindowPos(
+                self.hwnd(),
+                ptr::null_mut(), // ignore
+                0,               // ignore
+                0,               // ignore
+                w,
+                h,
+                winuser::SWP_NOZORDER | winuser::SWP_NOMOVE | winuser::SWP_NOOWNERZORDER,
+            );
         }
     }
 
@@ -42,6 +65,20 @@ impl Window {
             let mut rect: windef::RECT = mem::zeroed();
             winuser::GetWindowRect(self.hwnd(), &mut rect);
             (rect.left, rect.top)
+        }
+    }
+
+    pub fn set_pos(&self, x: i32, y: i32) {
+        unsafe {
+            winuser::SetWindowPos(
+                self.hwnd(),
+                ptr::null_mut(), // ignore
+                x,
+                y,
+                0, // ignore
+                0, // ignore
+                winuser::SWP_NOZORDER | winuser::SWP_NOSIZE | winuser::SWP_NOOWNERZORDER,
+            );
         }
     }
 

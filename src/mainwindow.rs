@@ -25,8 +25,6 @@ impl MainWindow {
         let params = Params::builder()
             .class_name("PictMainWindowClass".to_wide())
             .window_name("pict".to_wide())
-            .width(conf.size.w)
-            .height(conf.size.h)
             .x(conf.position.x)
             .y(conf.position.y)
             .style(winuser::WS_TILEDWINDOW)
@@ -40,6 +38,8 @@ impl MainWindow {
                 *this = Some(window.hwnd())
             }
         });
+
+        window.set_size(conf.size.w, conf.size.h);
         Self { window, context }
     }
 
@@ -177,7 +177,7 @@ impl MainWindow {
     //     trace!("resized: {:?}", size)
     // }
 
-    fn on_moving(&self, pos: (i32, i32)) {
+    fn on_moving(&self, _pos: (i32, i32)) {
         let this = self.context.lock().unwrap();
         if this.get_snap() {
             App::with_filelist(|f| f.align_to(self.hwnd().into()));

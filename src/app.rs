@@ -133,7 +133,7 @@ impl App {
 
     fn save(&self) {
         let pos = self.mainwindow.window.get_pos();
-        let size = self.mainwindow.window.get_size();
+        let size = self.mainwindow.window.get_size_win();
 
         Config {
             position: Position { x: pos.0, y: pos.1 },

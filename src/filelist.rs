@@ -93,7 +93,7 @@ impl FileList {
 
     pub fn set_title(&self, title: &str) {
         debug!("setting title {}", title);
-        unsafe { winuser::SetWindowTextW(self.window.hwnd(), title.to_wide()) };
+        self.window.set_title(&title);
     }
 
     pub fn align_to(&self, neighbor: windef::HWND) {
