@@ -28,7 +28,7 @@ impl fmt::Display for Error {
                 let s = String::from_utf16_lossy(&msg);
                 writeln!(f, "#{}: {}", e, &s)
             }
-            _ => Ok(()),
+           // _ => Ok(()),
         }
     }
 }

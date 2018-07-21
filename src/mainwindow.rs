@@ -1,17 +1,16 @@
 use std::fs;
 use std::path::PathBuf;
-use std::{mem, ptr};
 
-use winapi::shared::{minwindef, windef};
-use winapi::um::{commctrl, winuser};
+use winapi::shared::windef;
+use winapi::um::winuser;
 
 use app::App;
 use class::Class;
 use config::Config;
-use error::*;
+use context::*;
 use event::{self, *};
 use util::*;
-use window::{Params, Window};
+use window::{Params, Window, HWND};
 
 lazy_static! {
     pub static ref MAIN_WINDOW_CLASS: Vec<u16> = {
@@ -27,27 +26,21 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    pub fn new(conf: &Config) -> Self {
-        let x = conf.position.x;
-        let y = conf.position.y;
-        let w = conf.size.w;
-        let h = conf.size.h;
+    pub fn new(_conf: &Config, queue: &EventQueue) -> Self {
+        let params = Params::builder()
+            .class_name(MAIN_WINDOW_CLASS.as_ptr())
+            .window_name("pict".to_wide().as_ptr())
+            .style(winuser::WS_TILEDWINDOW)
+            .ex_style(winuser::WS_EX_APPWINDOW | winuser::WS_EX_ACCEPTFILES)
+            .build();
 
-        let params = Params::builder().x(x).y(y).width(w).height(h)
-        .class_name(MAIN_WINDOW_CLASS.as_ptr())
-        .window_name("pict".to_wide().as_ptr())
-        .style(winuser::WS_TILEDWINDOW) // what styles do I need?
-        .ex_style(winuser::WS_EX_APPWINDOW | winuser::WS_EX_ACCEPTFILES)
-        .build();
-
-        let window = Window::new(params);
-        window.show(); // nShowCmd what do
-
+        let window = Window::new(&queue, &params);
+        window.show();
         Self { window }
     }
 
-    pub fn hwnd(&self) -> windef::HWND {
-        self.window.hwnd()
+    pub fn hwnd(&self) -> HWND {
+        self.window.hwnd().into()
     }
 
     fn next(&self) {
@@ -62,7 +55,7 @@ impl MainWindow {
         App::set_index(next);
         debug!("moving to next index: {}", next);
 
-        App::get_filelist().select(next);
+        //App::get_filelist().select(next);
     }
 
     fn previous(&self) {
@@ -77,22 +70,22 @@ impl MainWindow {
         App::set_index(prev);
         debug!("moving to previous index: {}", prev);
 
-        App::get_filelist().select(prev);
+        //App::get_filelist().select(prev);
     }
 
     fn toggle_filelist(&self) {
         debug!("toggling filelist");
-        let filelist = App::get_filelist();
-        if filelist.is_visible() {
-            filelist.hide()
-        } else {
-            filelist.show()
-        }
+        // let filelist = App::get_filelist();
+        // if filelist.is_visible() {
+        //     filelist.hide()
+        // } else {
+        //     filelist.show()
+        // }
     }
 
     fn align_filelist(&self) {
         debug!("aligning filelist");
-        App::get_filelist().align_to(self.hwnd());
+        //    App::get_filelist().align_to(self.hwnd());
         App::with_context(|app| {
             let mut app = app.lock().unwrap();
             let snap = app.get_snap();
@@ -100,7 +93,7 @@ impl MainWindow {
         })
     }
 
-    fn scale(&self, key: event::Key) {
+    fn scale(&self, key: &event::Key) {
         let n = match key {
             Key::Key1 => 0.5,
             Key::Key2 => 1.0,
@@ -124,9 +117,9 @@ impl MainWindow {
         debug!("toggling playing");
     }
 
-    fn on_key_down(&self, key: event::Key) {
+    fn on_key_down(&self, key: &event::Key) {
         trace!("on keydown: {:?}", key);
-        match key {
+        match *key {
             Key::A => self.previous(),
             Key::D => self.next(),
             Key::L => self.toggle_filelist(),
@@ -142,7 +135,7 @@ impl MainWindow {
         }
     }
 
-    fn on_mouse_down(&self, button: event::MouseButton) {
+    fn on_mouse_down(&self, button: &event::MouseButton) {
         // middle click is for panning
         // right click will do nothing
         // left click maybe gets forwarded to containing controls?
@@ -162,7 +155,7 @@ impl MainWindow {
     fn on_moved(&self, pos: (f32, f32)) {
         trace!("moved: {:?}", pos);
         if App::with_context(|app| app.lock().unwrap().get_snap()) {
-            App::get_filelist().align_to(self.hwnd());
+            //   App::get_filelist().align_to(self.hwnd());
         }
     }
 
@@ -201,31 +194,9 @@ impl MainWindow {
             app.extend_list(&list);
         });
 
-        App::get_filelist().populate(dir.to_str().unwrap(), &list);
+        //    App::get_filelist().populate(dir.to_str().unwrap(), &list);
 
         Some(())
-    }
-
-    unsafe extern "system" fn wndproc(
-        hwnd: windef::HWND,
-        msg: minwindef::UINT,
-        wp: minwindef::WPARAM,
-        lp: minwindef::LPARAM,
-        id: usize,
-        data: usize,
-    ) -> minwindef::LRESULT {
-        use winapi::um::winuser::*;
-
-        match msg {
-            WM_NCDESTROY => {
-                if commctrl::RemoveWindowSubclass(hwnd, Some(MainWindow::wndproc), id) != 0 {
-                    let err = get_last_windows_error();
-                    error!("cannot removed windowsubclass: {}", err)
-                }
-                commctrl::DefSubclassProc(hwnd, msg, wp, lp)
-            }
-            _ => commctrl::DefSubclassProc(hwnd, msg, wp, lp),
-        }
     }
 }
 

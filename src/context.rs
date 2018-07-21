@@ -1,12 +1,6 @@
-use std::rc::Rc;
-
 use config::Config;
-use filelist::FileList;
-use mainwindow::MainWindow;
 
 pub struct Context {
-    pub mainwindow: Rc<MainWindow>,
-    pub filelist: Rc<FileList>,
     list: Vec<String>,
     index: usize,
     snap: bool,
@@ -15,8 +9,6 @@ pub struct Context {
 impl Context {
     pub fn new(conf: &Config) -> Self {
         Self {
-            mainwindow: Rc::new(MainWindow::new(&conf)),
-            filelist: Rc::new(FileList::new()),
             list: vec![],
             index: 0,
             snap: conf.filelist.snap,

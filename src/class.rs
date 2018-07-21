@@ -4,7 +4,6 @@ use std::ptr;
 use winapi::shared::{ntdef, windef};
 use winapi::um::{libloaderapi, winuser};
 
-use app::App;
 use error::*;
 
 #[derive(Debug)]
@@ -16,7 +15,7 @@ impl Class {
             let class = winuser::WNDCLASSEXW {
                 cbSize: mem::size_of::<winuser::WNDCLASSEXW>() as u32,
                 style: winuser::CS_DBLCLKS,
-                lpfnWndProc: Some(App::wndproc),
+                lpfnWndProc: Some(winuser::DefWindowProcW),
                 cbClsExtra: 0,
                 cbWndExtra: 0,
                 hInstance: libloaderapi::GetModuleHandleW(ptr::null_mut()),

@@ -22,12 +22,12 @@ pub mod config;
 pub use config::Config;
 
 mod class;
-mod control;
+//mod control;
 mod window;
 
-mod listview;
+// mod listview;
 
-mod filelist;
+// mod filelist;
 mod mainwindow;
 
 mod app;

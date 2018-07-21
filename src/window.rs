@@ -1,114 +1,105 @@
-use std::mem;
 use std::ptr;
 
-use winapi::shared::{minwindef, ntdef, windef};
-use winapi::um::winuser;
+use winapi::shared::{basetsd, minwindef, ntdef, windef};
+use winapi::um::{commctrl, winuser};
 
-use util::*;
+use event::*;
 
-#[derive(Debug)]
 pub struct Window {
-    hwnd: windef::HWND,
+    hwnd: HWND,
 }
 
-impl Window {
-    pub fn new(params: Params) -> Self {
-        unsafe {
-            let hwnd = winuser::CreateWindowExW(
-                params.ex_style,
-                params.class_name,
-                params.window_name,
-                params.style,
-                params.x,
-                params.y,
-                params.width,
-                params.height,
-                params.parent,
-                params.menu,
-                hinstance(),
-                params.lp_param,
-            );
-            assert!(!hwnd.is_null());
+unsafe impl Send for Window {}
+unsafe impl Sync for Window {}
 
-            Self { hwnd }
-        }
+impl Window {
+    pub fn new(queue: &EventQueue, params: &Params) -> Self {
+        unsafe { Window::init(&queue, &params) }
     }
 
     pub fn hwnd(&self) -> windef::HWND {
-        self.hwnd
-    }
-
-    pub fn post_message(&self, msg: u32, wp: minwindef::WPARAM) {
-        unsafe { winuser::SendMessageW(self.hwnd, msg, wp, 0) };
-    }
-
-    pub fn send_message(&self, msg: u32, wp: minwindef::WPARAM, lp: minwindef::LPARAM) {
-        unsafe { winuser::SendMessageW(self.hwnd, msg, wp, lp) };
-    }
-
-    // TODO need to figure out which monitor is the main monitor then to calculate the offset for the position
-    pub fn set_position(&self, x: i32, y: i32, cx: i32, cy: i32, flags: u32) {
-        unsafe { winuser::SetWindowPos(self.hwnd, ptr::null_mut(), x, y, cx, cy, flags) };
-    }
-
-    // x y w h
-    pub fn get_position(&self) -> (i32, i32, i32, i32) {
-        unsafe {
-            let mut rect: windef::RECT = mem::zeroed();
-            winuser::GetWindowRect(self.hwnd, &mut rect);
-            (rect.left, rect.top, rect.right, rect.bottom)
-        }
-    }
-
-    // XXX: this does window size, not the client size
-    pub fn set_size(&self, w: i32, h: i32) {
-        unsafe {
-            let mut rect: windef::RECT = mem::zeroed();
-            winuser::GetWindowRect(self.hwnd, &mut rect);
-
-            let sz = windef::RECT {
-                top: rect.top,
-                left: rect.left,
-                bottom: w,
-                right: h,
-            };
-
-            winuser::SetWindowPos(
-                self.hwnd,
-                winuser::HWND_NOTOPMOST,
-                sz.left,
-                sz.top,
-                sz.right,
-                sz.bottom,
-                winuser::SWP_NOACTIVATE,
-            );
-
-            // AdjustWindowRectEx
-            // SetWindowPos
-            // UpdateWindow // maybe don't do this yet
-        }
-    }
-
-    pub fn get_size(&self) -> (u32, u32) {
-        unsafe {
-            let mut rect: windef::RECT = mem::zeroed();
-            winuser::GetClientRect(self.hwnd, &mut rect);
-            (
-                (rect.right - rect.left) as u32,
-                (rect.bottom - rect.top) as u32,
-            )
-        }
+        self.hwnd.0
     }
 
     pub fn show(&self) {
-        unsafe { winuser::ShowWindow(self.hwnd, winuser::SW_SHOW) };
+        unsafe { winuser::ShowWindow(self.hwnd(), winuser::SW_SHOW) };
     }
 
-    pub fn hide(&self) {
-        unsafe { winuser::ShowWindow(self.hwnd, winuser::SW_HIDE) };
-    }
+    unsafe fn init(queue: &EventQueue, params: &Params) -> Self {
+        let hwnd = winuser::CreateWindowExW(
+            params.ex_style,
+            params.class_name,
+            params.window_name,
+            params.style,
+            params.x,
+            params.y,
+            params.width,
+            params.height,
+            params.parent,
+            params.menu,
+            ::util::hinstance(),
+            params.lp_param,
+        );
+        assert!(!hwnd.is_null());
 
-    // TODO add update and get_rect calculations
+        let queue = EventQueue(queue.0.clone());
+        subclass_window(hwnd, queue);
+        Self { hwnd: HWND(hwnd) }
+    }
+}
+
+unsafe extern "system" fn callback(
+    hwnd: windef::HWND,
+    msg: minwindef::UINT,
+    wp: minwindef::WPARAM,
+    lp: minwindef::LPARAM,
+    _: basetsd::UINT_PTR,
+    data: basetsd::DWORD_PTR,
+) -> minwindef::LRESULT {
+    let queue = &mut *(data as *mut EventQueue);
+    let target = HWND(hwnd);
+
+    use winapi::um::winuser::*;
+    match msg {
+        WM_NCCREATE => commctrl::DefSubclassProc(hwnd, msg, wp, lp),
+        WM_CLOSE => {
+            queue.send(Event {
+                event: EventType::CloseRequest,
+                hwnd: target,
+            });
+            0
+        }
+        WM_DESTROY => {
+            winuser::PostQuitMessage(0);
+            0
+        }
+        _ => DefWindowProcW(hwnd, msg, wp, lp),
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HWND(windef::HWND);
+impl From<windef::HWND> for HWND {
+    fn from(hwnd: windef::HWND) -> Self {
+        HWND(hwnd)
+    }
+}
+
+// https://github.com/retep998/winapi-rs/issues/360
+unsafe impl Send for HWND {}
+
+const WINDOW_SUBCLASS_ID: basetsd::UINT_PTR = 0;
+pub fn subclass_window(hwnd: windef::HWND, queue: EventQueue) {
+    let ptr = Box::into_raw(Box::new(queue));
+    let res = unsafe {
+        commctrl::SetWindowSubclass(
+            hwnd,
+            Some(callback),
+            WINDOW_SUBCLASS_ID,
+            ptr as basetsd::DWORD_PTR,
+        )
+    };
+    assert_eq!(res, 1);
 }
 
 #[derive(TypedBuilder, Debug)]
