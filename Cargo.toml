@@ -12,4 +12,6 @@ serde_derive = "1.0.70"
 typed-builder = "0.1.0"
 lazy_static = "1.0.2"
 
-winapi = {version = "0.3.5", features = ["winuser", "windef", "commctrl", "errhandlingapi", "objbase"]}
+winapi = {version = "0.3.5", features = [
+    "winuser", "windef", "commctrl", "errhandlingapi", "objbase", "windowsx", "shellapi"
+]}

@@ -17,16 +17,6 @@ pub struct FileList {
     context: Arc<Mutex<Context>>,
 }
 
-impl Drop for FileList {
-    fn drop(&mut self) {
-        info!(
-            "dropping filelist: {} / {}",
-            Arc::weak_count(&self.context),
-            Arc::strong_count(&self.context),
-        );
-    }
-}
-
 impl FileList {
     pub fn new(context: Arc<Mutex<Context>>) -> Self {
         ::lazy_static::initialize(&FILE_CLASS);
@@ -166,5 +156,12 @@ impl FileList {
                 _ => return,
             }
         };
+    }
+
+    pub fn handle(&self, ev: &EventType) {
+        match ev {
+            EventType::CloseRequest => self.hide(),
+            _ => return,
+        }
     }
 }

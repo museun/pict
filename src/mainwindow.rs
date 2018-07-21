@@ -16,16 +16,6 @@ pub struct MainWindow {
     context: Arc<Mutex<Context>>,
 }
 
-impl Drop for MainWindow {
-    fn drop(&mut self) {
-        info!(
-            "dropping mainwindow: {} / {}",
-            Arc::weak_count(&self.context),
-            Arc::strong_count(&self.context),
-        );
-    }
-}
-
 impl MainWindow {
     pub fn new(context: Arc<Mutex<Context>>) -> Self {
         ::lazy_static::initialize(&MAIN_CLASS);
@@ -221,6 +211,21 @@ impl MainWindow {
         App::with_filelist(|f| f.populate(dir.to_str().unwrap(), &list));
 
         Some(())
+    }
+
+    pub fn handle(&self, ev: &EventType) {
+        match ev {
+            EventType::MouseMove { x, y } => {}
+            EventType::MouseDown { button, x, y } => trace!("{:?} click: {},{}", button, x, y),
+            EventType::MouseWheel { delta, x, y } => trace!("mouse wheel: {} {},{}", delta, x, y),
+            EventType::KeyDown { ref key } => trace!("key down: {:?}", key),
+            EventType::Moved { x, y } => {}
+            EventType::Moving { x, y } => {}
+            EventType::DropFile { ref file } => {
+                // got file
+            }
+            _ => return,
+        }
     }
 }
 

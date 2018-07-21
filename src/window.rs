@@ -6,12 +6,6 @@ pub struct Window {
     hwnd: HWND,
 }
 
-impl Drop for Window {
-    fn drop(&mut self) {
-        info!("dropping window");
-    }
-}
-
 unsafe impl Send for Window {}
 unsafe impl Sync for Window {}
 
@@ -88,7 +82,6 @@ pub unsafe extern "system" fn callback(
     _: basetsd::UINT_PTR,
     _data: basetsd::DWORD_PTR,
 ) -> minwindef::LRESULT {
-    // get the app here, pass it as a reference with the
     let target = HWND(hwnd);
 
     use winapi::um::winuser::*;
@@ -104,7 +97,7 @@ pub unsafe extern "system" fn callback(
         winuser::WM_WINDOWPOSCHANGED => {
             let pos = lp as *const WINDOWPOS;
             if (*pos).flags & SWP_NOMOVE != SWP_NOMOVE {
-                let (x, y) = ((*pos).x, (*pos).y); // calc x,y
+                let (x, y) = ((*pos).x, (*pos).y);
                 App::handle(&Event {
                     event: EventType::Moved { x, y },
                     hwnd: target,
@@ -112,6 +105,7 @@ pub unsafe extern "system" fn callback(
             }
             commctrl::DefSubclassProc(hwnd, msg, wp, lp)
         }
+
         WM_WINDOWPOSCHANGING => {
             let pos = lp as *const WINDOWPOS;
             if (*pos).flags & SWP_NOMOVE != SWP_NOMOVE {
@@ -121,6 +115,82 @@ pub unsafe extern "system" fn callback(
                     hwnd: target,
                 });
             }
+            0
+        }
+
+        WM_KEYDOWN => {
+            let key: Key = (wp as i32).into();
+            App::handle(&Event {
+                event: EventType::KeyDown { key },
+                hwnd: target,
+            });
+            0
+        }
+
+        WM_LBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDOWN => {
+            let x = windowsx::GET_X_LPARAM(lp);
+            let y = windowsx::GET_Y_LPARAM(lp);
+            let button: MouseButton = wp.into();
+            App::handle(&Event {
+                event: EventType::MouseDown { button, x, y },
+                hwnd: target,
+            });
+            0
+        }
+
+        WM_MOUSEMOVE => {
+            let x = windowsx::GET_X_LPARAM(lp);
+            let y = windowsx::GET_Y_LPARAM(lp);
+            App::handle(&Event {
+                event: EventType::MouseMove { x, y },
+                hwnd: target,
+            });
+            0
+        }
+
+        WM_MOUSEWHEEL => {
+            let delta = winuser::GET_WHEEL_DELTA_WPARAM(wp);
+            let x = windowsx::GET_X_LPARAM(lp);
+            let y = windowsx::GET_Y_LPARAM(lp);
+            App::handle(&Event {
+                event: EventType::MouseWheel { delta, x, y },
+                hwnd: target,
+            });
+            0
+        }
+
+        WM_DROPFILES => {
+            let hdrop = wp as shellapi::HDROP;
+            let count = shellapi::DragQueryFileW(hdrop, 0xFFFF_FFFF, ptr::null_mut(), 0);
+
+            let mut buf: [u16; minwindef::MAX_PATH] = mem::uninitialized();
+            for i in 0..count {
+                let n = shellapi::DragQueryFileW(
+                    hdrop,
+                    i,
+                    buf.as_mut_ptr(),
+                    minwindef::MAX_PATH as u32,
+                ) as usize;
+                if n > 0 {
+                    App::handle(&Event {
+                        event: EventType::DropFile {
+                            file: String::from_utf16_lossy(&buf[0..n]),
+                        },
+                        hwnd: target,
+                    });
+                }
+            }
+
+            shellapi::DragFinish(hdrop);
+            0
+        }
+
+        WM_NOTIFY => {
+            App::handle(&Event {
+                event: EventType::Notify { lp },
+                hwnd: target,
+            });
+
             0
         }
 

@@ -68,6 +68,4 @@ impl Context {
     pub fn get_list_iter(&self) -> impl Iterator<Item = &String> {
         self.list.iter()
     }
-
-    // TODO expose an iterator over the list?
 }

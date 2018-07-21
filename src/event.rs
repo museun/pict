@@ -8,17 +8,18 @@ pub struct Event {
 
 #[derive(Debug, PartialEq)]
 pub enum EventType {
-    CloseRequest,
-    Quit,
-    MouseMove { x: i32, y: i32 },
-    MouseDown { button: MouseButton, x: i32, y: i32 },
-    MouseWheel { delta: i32, x: f32, y: f32 },
-    KeyDown { key: Key },
-    Moved { x: i32, y: i32 },
-    Moving { x: i32, y: i32 },
-    Resizing { width: i32, height: i32 },
-    Resize { width: i32, height: i32 },
-    Notify { lp: isize }, // actually an LPARAM
+    CloseRequest,                                      // done
+    Quit,                                              // done
+    MouseMove { x: i32, y: i32 },                      // done
+    MouseDown { button: MouseButton, x: i32, y: i32 }, // done
+    MouseWheel { delta: i16, x: i32, y: i32 },         // done
+    KeyDown { key: Key },                              // done
+    Moved { x: i32, y: i32 },                          // done
+    Moving { x: i32, y: i32 },                         // done
+    Resizing { width: i32, height: i32 },              // ?
+    Resize { width: i32, height: i32 },                // ?
+    DropFile { file: String },                         // done
+    Notify { lp: isize },                              // done | actually an LPARAM
 }
 
 #[derive(Debug, PartialEq)]
@@ -29,13 +30,16 @@ pub enum MouseButton {
     // X1, X2,
 }
 
-impl From<u32> for MouseButton {
-    fn from(button: u32) -> MouseButton {
+impl From<usize> for MouseButton {
+    fn from(button: usize) -> MouseButton {
         match button {
-            winuser::WM_LBUTTONDOWN => MouseButton::Left,
-            winuser::WM_MBUTTONDOWN => MouseButton::Middle,
-            winuser::WM_RBUTTONDOWN => MouseButton::Right,
-            _ => unreachable!(),
+            winuser::MK_LBUTTON => MouseButton::Left,
+            winuser::MK_MBUTTON => MouseButton::Middle,
+            winuser::MK_RBUTTON => MouseButton::Right,
+            _ => {
+                error!("uh oh: {}", button);
+                unreachable!()
+            }
         }
     }
 }
