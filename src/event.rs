@@ -59,6 +59,7 @@ pub enum Key {
     D,
     K,
     L,
+    R,
     Other(i32),
 }
 
@@ -78,6 +79,7 @@ impl From<i32> for Key {
             0x44 => Key::D,
             0x4B => Key::K,
             0x4C => Key::L,
+            0x52 => Key::R,
             _ => Key::Other(key),
         }
     }

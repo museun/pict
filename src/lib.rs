@@ -1,19 +1,16 @@
 extern crate winapi;
-
 #[macro_use]
 extern crate log;
-
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-
 extern crate toml;
-
 #[macro_use]
 extern crate lazy_static;
-
 #[macro_use]
 extern crate typed_builder;
+extern crate image;
+extern crate rand;
 
 mod common;
 
@@ -27,6 +24,7 @@ mod class;
 //mod control;
 mod window;
 
+//mod imageview;
 mod listview;
 
 mod filelist;
@@ -37,4 +35,4 @@ mod context;
 
 pub use app::App;
 
-mod event; // not sure if I'll wrap all of the messages. just here to make mainwindow happy
+mod event;

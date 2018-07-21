@@ -2,6 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use rand::prelude::*;
+
 use common::*;
 
 lazy_static! {
@@ -112,6 +114,18 @@ impl MainWindow {
         this.set_snap(!snap);
     }
 
+    fn choose_random_file(&self) {
+        let this = &mut self.context.lock().unwrap();
+        let len = this.get_len();
+        if len == 0 {
+            return;
+        }
+        let n = thread_rng().gen_range(0, len);
+        debug!("selecting random index: {} / {}", n, len);
+        this.set_index(n);
+        App::with_filelist(|f| f.select(n));
+    }
+
     fn scale(&self, key: &Key) {
         let n = match key {
             Key::Key1 => 0.5,
@@ -149,6 +163,7 @@ impl MainWindow {
             Key::D => self.next(),
             Key::L => self.toggle_filelist(),
             Key::K => self.align_filelist(),
+            Key::R => self.choose_random_file(),
 
             Key::Key1 | Key::Key2 | Key::Key3 | Key::Key4 => self.scale(key),
 
