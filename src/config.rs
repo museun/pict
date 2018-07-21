@@ -5,6 +5,10 @@ use toml;
 
 const CONFIG_FILE: &str = "pict.toml";
 
+lazy_static! {
+    static ref CONFIG: Config = Config::load();
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub position: Position,
@@ -30,6 +34,12 @@ pub struct FileList {
 }
 
 impl Config {
+    pub fn get<'a>() -> &'a Self {
+        ::lazy_static::initialize(&CONFIG);
+        debug!("got cached config");
+        &*CONFIG
+    }
+
     pub fn load() -> Self {
         fn try_load_config() -> Option<Config> {
             let s = fs::read_to_string(CONFIG_FILE).ok()?;

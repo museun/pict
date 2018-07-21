@@ -1,8 +1,6 @@
-use std::fmt;
-use std::ptr;
+use std::{fmt, ptr};
 
-use winapi::shared::ntdef;
-use winapi::um::{errhandlingapi, winbase};
+use common::*;
 
 pub enum Error {
     Win32Error(u32),

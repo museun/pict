@@ -1,17 +1,20 @@
 use std::path::PathBuf;
-use std::ptr;
+use std::{mem, ptr};
 
-use winapi::shared::minwindef;
-use winapi::um::libloaderapi;
+use common::*;
 
 pub trait ToWide {
-    fn to_wide(&self) -> Vec<u16>;
+    fn to_wide(&self) -> *const u16;
+    fn to_wide_mut(&self) -> *mut u16;
 }
 
 impl<T: AsRef<str>> ToWide for T {
-    fn to_wide(&self) -> Vec<u16> {
+    fn to_wide(&self) -> *const u16 {
         if self.as_ref().is_empty() {
-            return "\0".encode_utf16().collect();
+            let data = "\0".encode_utf16().collect::<Vec<_>>();
+            let res = data.as_ptr();
+            mem::forget(data);
+            return res;
         }
 
         let mut s = self.as_ref().to_owned();
@@ -19,33 +22,29 @@ impl<T: AsRef<str>> ToWide for T {
         if c != '\0' {
             s += "\0"
         };
-        s.encode_utf16().collect()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_string_non_null() {
-        let s = "this is a test";
-        let w = s.to_wide();
-        assert_eq!(s.len() + 1, w.len());
+        let data = s.encode_utf16().collect::<Vec<_>>();
+        let res = data.as_ptr();
+        mem::forget(data);
+        res
     }
 
-    #[test]
-    fn test_string_empty_non_null() {
-        let s = "";
-        let w = s.to_wide();
-        assert_eq!(s.len() + 1, w.len(), "{},{}", s.len(), w.len());
-    }
+    fn to_wide_mut(&self) -> *mut u16 {
+        if self.as_ref().is_empty() {
+            let mut data = "\0".encode_utf16().collect::<Vec<_>>();
+            let res = data.as_mut_ptr();
+            mem::forget(data);
+            return res;
+        }
 
-    #[test]
-    fn test_string_null() {
-        let s = "this is a test\0";
-        let w = s.to_wide();
-        assert_eq!(s.len(), w.len());
+        let mut s = self.as_ref().to_owned();
+        let c = s.chars().rev().take(1).next().unwrap();
+        if c != '\0' {
+            s += "\0"
+        };
+        let mut data = s.encode_utf16().collect::<Vec<_>>();
+        let res = data.as_mut_ptr();
+        mem::forget(data);
+        res
     }
 }
 

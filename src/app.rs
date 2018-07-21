@@ -1,22 +1,26 @@
-use std::cell::RefCell;
-use std::ptr;
-use std::sync::Mutex;
+#![allow(dead_code)]
+use std::sync::{Arc, Mutex};
+use std::{mem, ptr};
 
-use winapi::um::{combaseapi, objbase};
+use common::*;
 
-use config::Config;
-use context::Context;
-use event::*;
-
+use filelist::FileList;
 use mainwindow::MainWindow;
 
 thread_local!{
-    pub static APP: RefCell<Option<Mutex<Context>>> = RefCell::new(None);
+    pub static MAIN_HWND: Mutex<Option<windef::HWND>> = Mutex::new(None);
+    pub static LIST_HWND: Mutex<Option<windef::HWND>> = Mutex::new(None);
+    static TID: minwindef::DWORD = unsafe { processthreadsapi::GetCurrentThreadId() };
+}
+
+thread_local! {
+    pub static APP: Mutex<Option<App>> = Mutex::new(None);
 }
 
 pub struct App {
     mainwindow: MainWindow,
-    queue: EventQueue,
+    filelist: FileList,
+    context: Arc<Mutex<Context>>,
 }
 
 impl Default for App {
@@ -25,98 +29,104 @@ impl Default for App {
     }
 }
 
+impl Drop for App {
+    fn drop(&mut self) {
+        info!("dropping context");
+        let pos = self.mainwindow.window.get_pos();
+        let size = self.mainwindow.window.get_size();
+
+        Config {
+            position: Position { x: pos.0, y: pos.1 },
+            size: Size {
+                w: size.0 as i32,
+                h: size.1 as i32,
+            },
+            filelist: ::config::FileList {
+                snap: self.context.lock().unwrap().get_snap(),
+            },
+        }.save();
+    }
+}
+
 impl App {
     pub fn new() -> Self {
         COM_INITIALIZED.with(|_| {});
 
-        let config = Config::load();
+        let context = Arc::new(Mutex::new(Context::new()));
+        let mainwindow = MainWindow::new(Arc::clone(&context));
+        let filelist = FileList::new(Arc::clone(&context));
 
-        // set up a thread local reference to the context
-        APP.with(|app| {
-            let app = &mut *app.borrow_mut();
-            if app.is_none() {
-                *app = Some(Mutex::new(Context::new(&config)))
-            }
-        });
-
-        let queue = EventQueue::new();
-
-        let mainwindow = MainWindow::new(&config, &queue);
-        Self { mainwindow, queue }
+        Self {
+            mainwindow,
+            filelist,
+            context,
+        }
     }
 
     pub fn run(self) {
-        let main = self.mainwindow.hwnd();
+        unsafe {
+            winuser::IsGUIThread(1);
 
-        self.queue.run(move |ev: Event| {
-            trace!("ev: {:?}", ev);
-            if ev.event == EventType::CloseRequest && ev.hwnd == main {
-                return ControlFlow::Break;
+            let mut msg = mem::uninitialized();
+            loop {
+                if winuser::GetMessageW(&mut msg, ptr::null_mut(), 0, 0) == 0 {
+                    warn!("no message to get!");
+                    return;
+                }
+
+                winuser::TranslateMessage(&msg);
+                winuser::DispatchMessageW(&msg);
             }
-
-            ControlFlow::Continue
-        });
+        }
     }
 
-    //fn save() {
-    // let mainwindow = Self::get_mainwindow();
-
-    // Config {
-    //     position: Position { x: pos.0, y: pos.1 },
-    //     size: Size {
-    //         w: size.0 as i32,
-    //         h: size.1 as i32,
-    //     },
-    //     filelist: config::FileList {
-    //         snap: App::with_context(|app| app.lock().unwrap().get_snap()),
-    //     },
-    // }.save();
-    //}
-
-    pub fn get_list_len() -> usize {
-        Self::with_context(|app| app.lock().unwrap().get_len())
+    fn main_hwnd() -> ::window::HWND {
+        MAIN_HWND.with(|hwnd| hwnd.lock().unwrap().unwrap()).into()
     }
 
-    pub fn get_index() -> usize {
-        Self::with_context(|app| app.lock().unwrap().get_index())
+    fn list_hwnd() -> ::window::HWND {
+        LIST_HWND.with(|hwnd| hwnd.lock().unwrap().unwrap()).into()
     }
 
-    pub fn set_index(index: usize) {
-        Self::with_context(|app| app.lock().unwrap().set_index(index))
-    }
-
-    // pub fn get_filelist() -> Rc<FileList> {
-    //     Self::with_context(|app| {
-    //         let app = app.lock().unwrap();
-    //         Rc::clone(&app.filelist)
-    //     })
-    // }
-
-    // pub fn get_mainwindow() -> Rc<MainWindow> {
-    //     Self::with_context(|app| {
-    //         let app = app.lock().unwrap();
-    //         Rc::clone(&app.mainwindow)
-    //     })
-    // }
-
-    pub fn with_context<T>(f: impl Fn(&Mutex<Context>) -> T) -> T {
+    pub fn with_mainwindow<T>(f: impl Fn(&MainWindow) -> T) -> T {
         APP.with(|app| {
-            if let Some(ref app) = *app.borrow() {
-                f(app)
+            let this = &*app.lock().unwrap();
+            if let Some(this) = this.as_ref() {
+                f(&this.mainwindow)
             } else {
-                Self::die_invalid_state();
+                panic!("invalid state getting mainwindow");
             }
         })
     }
 
-    fn die_invalid_state() -> ! {
-        panic!("APP has not been created!");
+    pub fn with_filelist<T>(f: impl Fn(&FileList) -> T) -> T {
+        APP.with(|app| {
+            let this = &*app.lock().unwrap();
+            if let Some(this) = this.as_ref() {
+                f(&this.filelist)
+            } else {
+                panic!("invalid state getting filelist");
+            }
+        })
+    }
+
+    pub fn handle(ev: &Event) {
+        if let EventType::Moving { x, y } = ev.event {
+            //   trace!("moving: {},{}", x, y);
+        }
+
+        let main: ::window::HWND = Self::main_hwnd();
+        if ev.event == EventType::CloseRequest && ev.hwnd == main {
+            // I need to do cleanup here or something
+            unsafe { winuser::PostThreadMessageA(TID.with(|tid| *tid), winuser::WM_QUIT, 0, 0) };
+        }
     }
 }
 
 struct ComInitialized(*mut ());
 impl Drop for ComInitialized {
     fn drop(&mut self) {
+        info!("droping com");
         unsafe { combaseapi::CoUninitialize() };
     }
 }

@@ -15,6 +15,8 @@ extern crate lazy_static;
 #[macro_use]
 extern crate typed_builder;
 
+mod common;
+
 mod error;
 mod util;
 
@@ -25,9 +27,9 @@ mod class;
 //mod control;
 mod window;
 
-// mod listview;
+mod listview;
 
-// mod filelist;
+mod filelist;
 mod mainwindow;
 
 mod app;

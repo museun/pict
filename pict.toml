@@ -1,11 +1,11 @@
 [position]
-x = 498.0
-y = 372.0
+x = 594
+y = 309
 
 [size]
-w = 548.0
-h = 390.0
+w = 369
+h = 279
 
 [filelist]
-snap = true
+snap = false
 

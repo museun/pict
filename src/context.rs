@@ -1,4 +1,4 @@
-use config::Config;
+use common::*;
 
 pub struct Context {
     list: Vec<String>,
@@ -7,7 +7,9 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new(conf: &Config) -> Self {
+    pub fn new() -> Self {
+        let conf = Config::get();
+
         Self {
             list: vec![],
             index: 0,

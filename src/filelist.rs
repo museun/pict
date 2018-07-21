@@ -1,50 +1,65 @@
-use std::mem;
-use std::ptr;
-use std::str;
+#![allow(dead_code)]
+use std::sync::{Arc, Mutex};
+use std::{mem, ptr, str};
 
-use winapi::shared::windef;
-use winapi::um::winuser;
-
-use app::App;
-use class::Class;
+use common::*;
 use listview::ListView;
-use util::*;
-use window::{Params, Window};
 
 lazy_static! {
-    pub static ref FILE_WINDOW_CLASS: Vec<u16> = {
-        let name = "PictFileListClass".to_wide();
-        Class::create(name.as_ptr());
-        name
+    static ref FILE_CLASS: () = {
+        Class::create("PictFileListClass".to_wide());
     };
 }
 
 pub struct FileList {
-    window: Window,
+    pub(crate) window: Window,
     listview: ListView,
+    context: Arc<Mutex<Context>>,
+}
+
+impl Drop for FileList {
+    fn drop(&mut self) {
+        info!(
+            "dropping filelist: {} / {}",
+            Arc::weak_count(&self.context),
+            Arc::strong_count(&self.context),
+        );
+    }
 }
 
 impl FileList {
-    pub fn new() -> Self {
+    pub fn new(context: Arc<Mutex<Context>>) -> Self {
+        ::lazy_static::initialize(&FILE_CLASS);
+
         let params = Params::builder()
-            .class_name(FILE_WINDOW_CLASS.as_ptr())
-            .window_name("filelist".to_wide().as_ptr())
+            .class_name("PictFileListClass".to_wide())
+            .window_name("filelist".to_wide())
             .ex_style(winuser::WS_EX_TOOLWINDOW)
             .style(winuser::WS_TILEDWINDOW)
             .width(200)
             .height(400)
             .build();
 
-        let window = Window::new(params);
+        let window = Window::new(&params);
+        LIST_HWND.with(|hwnd| {
+            let mut this = hwnd.lock().unwrap();
+            if this.is_none() {
+                *this = Some(window.hwnd())
+            }
+        });
 
         let listview = ListView::new(window.hwnd());
         listview.fit_list_view();
 
-        Self { listview, window }
+        Self {
+            listview,
+            window,
+            context,
+        }
     }
 
-    pub fn hwnd(&self) -> windef::HWND {
-        self.window.hwnd()
+    pub fn hwnd(&self) -> HWND {
+        self.window.hwnd().into()
     }
 
     pub fn show(&self) {
@@ -81,16 +96,15 @@ impl FileList {
         let images = files.to_vec();
         self.set_title(&dir);
         for item in &images {
-            self.listview.add_item(&item.0, item.1);
+            self.listview.add_item(&item.0, item.1, {
+                self.context.lock().unwrap().get_index() // XXX: does this really need to do this?
+            });
         }
     }
 
     pub fn set_title(&self, title: &str) {
         debug!("setting title {}", title);
-
-        unsafe {
-            winuser::SetWindowTextW(self.window.hwnd(), title.to_wide().as_ptr());
-        }
+        unsafe { winuser::SetWindowTextW(self.window.hwnd(), title.to_wide()) };
     }
 
     pub fn align_to(&self, neighbor: windef::HWND) {
@@ -137,12 +151,16 @@ impl FileList {
             match pnmlv.hdr.code {
                 NM_SETFOCUS | NM_RETURN | NM_CLICK | LVN_ITEMACTIVATE | LVN_ITEMCHANGED => {
                     let item = *(lp as *mut NMITEMACTIVATE);
-                    let mut index = App::get_index();
+                    let mut index = {
+                        let this = self.context.lock().unwrap();
+                        this.get_index()
+                    };
+
                     if item.iItem != -1
                         && (item.uNewState ^ item.uOldState) & LVIS_SELECTED == 0
                         && index != item.iItem as usize
                     {
-                        App::set_index(item.iItem as usize)
+                        self.context.lock().unwrap().set_index(item.iItem as usize)
                     }
                 }
                 _ => return,

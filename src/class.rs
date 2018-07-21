@@ -1,16 +1,12 @@
-use std::mem;
-use std::ptr;
+use std::{mem, ptr};
 
-use winapi::shared::{ntdef, windef};
-use winapi::um::{libloaderapi, winuser};
-
-use error::*;
+use common::*;
 
 #[derive(Debug)]
 pub struct Class(pub ntdef::LPCWSTR);
 
 impl Class {
-    pub fn create(name: ntdef::LPCWSTR) -> ntdef::LPCWSTR {
+    pub fn create(name: ntdef::LPCWSTR) {
         unsafe {
             let class = winuser::WNDCLASSEXW {
                 cbSize: mem::size_of::<winuser::WNDCLASSEXW>() as u32,
@@ -28,7 +24,6 @@ impl Class {
             };
 
             Class::register(&class);
-            name
         }
     }
 
@@ -42,8 +37,20 @@ impl Class {
             }
         }
     }
+}
 
-    // initialize COM here
+const WINDOW_SUBCLASS_ID: basetsd::UINT_PTR = 0;
+pub fn subclass_window(hwnd: windef::HWND) {
+    let ptr = Box::into_raw(Box::new(App::handle));
+    let res = unsafe {
+        commctrl::SetWindowSubclass(
+            hwnd,
+            Some(callback),
+            WINDOW_SUBCLASS_ID,
+            ptr as basetsd::DWORD_PTR,
+        )
+    };
+    assert_eq!(res, 1);
 }
 
 // impl drop to Unregister Class

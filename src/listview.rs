@@ -1,10 +1,6 @@
 use std::{mem, ptr};
 
-use winapi::shared::{minwindef, windef};
-use winapi::um::{commctrl, wingdi, winuser};
-
-use app::App;
-use util::*;
+use common::*;
 
 pub struct ListView {
     hwnd: windef::HWND,
@@ -21,8 +17,8 @@ impl ListView {
             winuser::GetClientRect(parent, &mut rect);
             let hwnd = winuser::CreateWindowExW(
                 0,
-                WC_LISTVIEW.to_wide().as_ptr(),
-                "".to_wide().as_ptr(),
+                WC_LISTVIEW.to_wide(),
+                "".to_wide(),
                 WS_CHILD
                     | WS_VISIBLE
                     | LVS_NOCOLUMNHEADER
@@ -47,9 +43,7 @@ impl ListView {
                 (LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER) as isize,
             );
 
-            let mut data = "File".to_wide();
-            let file = data.as_mut_ptr();
-
+            let file = "File".to_wide_mut();
             let mut lvc = mem::uninitialized::<LVCOLUMNW>();
             lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_MINWIDTH | LVCF_IDEALWIDTH;
             lvc.pszText = file;
@@ -63,9 +57,7 @@ impl ListView {
                 &lvc as *const _ as minwindef::LPARAM,
             );
 
-            let mut data = "Size".to_wide();
-            let size = data.as_mut_ptr();
-
+            let size = "Size".to_wide_mut();
             lvc.mask |= LVCF_FMT | LVCF_SUBITEM;
             lvc.fmt = LVCFMT_RIGHT;
             lvc.pszText = size;
@@ -148,16 +140,12 @@ impl ListView {
         }
     }
 
-    pub fn add_item(&self, name: &str, size: usize) {
+    pub fn add_item(&self, name: &str, size: usize, index: usize) {
         use winapi::um::commctrl::*;
 
-        let index = App::get_index() + 1;
         unsafe {
-            let mut data = name.to_wide();
-            let name = data.as_mut_ptr();
-
-            let mut data = humanize_size(size).to_wide();
-            let size = data.as_mut_ptr();
+            let name = name.to_wide_mut();
+            let size = humanize_size(size).to_wide_mut();
 
             let mut item = mem::zeroed::<LVITEMW>();
             item.pszText = name;

@@ -1,42 +1,57 @@
+#![allow(dead_code)]
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
-use winapi::shared::windef;
-use winapi::um::winuser;
-
-use app::App;
-use class::Class;
-use config::Config;
-use context::*;
-use event::{self, *};
-use util::*;
-use window::{Params, Window, HWND};
+use common::*;
 
 lazy_static! {
-    pub static ref MAIN_WINDOW_CLASS: Vec<u16> = {
-        let name = "PictMainWindowClass".to_wide();
-        Class::create(name.as_ptr());
-        name
+    static ref MAIN_CLASS: () = {
+        Class::create("PictMainWindowClass".to_wide());
     };
 }
 
-#[repr(C)]
 pub struct MainWindow {
-    window: Window,
+    pub(crate) window: Window,
+    context: Arc<Mutex<Context>>,
+}
+
+impl Drop for MainWindow {
+    fn drop(&mut self) {
+        info!(
+            "dropping mainwindow: {} / {}",
+            Arc::weak_count(&self.context),
+            Arc::strong_count(&self.context),
+        );
+    }
 }
 
 impl MainWindow {
-    pub fn new(_conf: &Config, queue: &EventQueue) -> Self {
+    pub fn new(context: Arc<Mutex<Context>>) -> Self {
+        ::lazy_static::initialize(&MAIN_CLASS);
+
+        let conf = Config::get();
+
         let params = Params::builder()
-            .class_name(MAIN_WINDOW_CLASS.as_ptr())
-            .window_name("pict".to_wide().as_ptr())
+            .class_name("PictMainWindowClass".to_wide())
+            .window_name("pict".to_wide())
+            .width(conf.size.w)
+            .height(conf.size.h)
+            .x(conf.position.x)
+            .y(conf.position.y)
             .style(winuser::WS_TILEDWINDOW)
             .ex_style(winuser::WS_EX_APPWINDOW | winuser::WS_EX_ACCEPTFILES)
             .build();
 
-        let window = Window::new(&queue, &params);
+        let window = Window::new(&params);
+        MAIN_HWND.with(|hwnd| {
+            let mut this = hwnd.lock().unwrap();
+            if this.is_none() {
+                *this = Some(window.hwnd())
+            }
+        });
         window.show();
-        Self { window }
+        Self { window, context }
     }
 
     pub fn hwnd(&self) -> HWND {
@@ -44,56 +59,63 @@ impl MainWindow {
     }
 
     fn next(&self) {
-        let len = App::get_list_len();
+        let ctx = Arc::clone(&self.context);
+        let this = &mut ctx.lock().unwrap();
+
+        let len = this.get_len();
         if len == 0 {
             debug!("can't move to next index. list empty");
             return;
         }
 
-        let index = App::get_index();
+        let index = this.get_index();
         let next = if index + 1 == len { 0 } else { index + 1 };
-        App::set_index(next);
+        this.set_index(next);
         debug!("moving to next index: {}", next);
 
-        //App::get_filelist().select(next);
+        App::with_filelist(|f| f.select(next));
     }
 
     fn previous(&self) {
-        let len = App::get_list_len();
+        let this = &mut self.context.lock().unwrap();
+        let len = this.get_len();
         if len == 0 {
             debug!("can't move to previous index. list empty");
             return;
         }
 
-        let index = App::get_index();
+        let index = this.get_index();
         let prev = if index == 0 { len - 1 } else { index - 1 };
-        App::set_index(prev);
+        this.set_index(prev);
         debug!("moving to previous index: {}", prev);
 
-        //App::get_filelist().select(prev);
+        App::with_filelist(|f| f.select(prev));
     }
 
     fn toggle_filelist(&self) {
         debug!("toggling filelist");
-        // let filelist = App::get_filelist();
-        // if filelist.is_visible() {
-        //     filelist.hide()
-        // } else {
-        //     filelist.show()
-        // }
+
+        App::with_filelist(|f| {
+            if f.is_visible() {
+                f.hide()
+            } else {
+                f.show()
+            }
+        });
     }
 
     fn align_filelist(&self) {
         debug!("aligning filelist");
-        //    App::get_filelist().align_to(self.hwnd());
-        App::with_context(|app| {
-            let mut app = app.lock().unwrap();
-            let snap = app.get_snap();
-            app.set_snap(!snap);
-        })
+        {
+            App::with_filelist(|f| f.align_to(self.hwnd().into()));
+        }
+
+        let this = &mut self.context.lock().unwrap();
+        let snap = this.get_snap();
+        this.set_snap(!snap);
     }
 
-    fn scale(&self, key: &event::Key) {
+    fn scale(&self, key: &Key) {
         let n = match key {
             Key::Key1 => 0.5,
             Key::Key2 => 1.0,
@@ -117,7 +139,7 @@ impl MainWindow {
         debug!("toggling playing");
     }
 
-    fn on_key_down(&self, key: &event::Key) {
+    fn on_key_down(&self, key: &Key) {
         trace!("on keydown: {:?}", key);
         match *key {
             Key::A => self.previous(),
@@ -135,7 +157,7 @@ impl MainWindow {
         }
     }
 
-    fn on_mouse_down(&self, button: &event::MouseButton) {
+    fn on_mouse_down(&self, button: &MouseButton) {
         // middle click is for panning
         // right click will do nothing
         // left click maybe gets forwarded to containing controls?
@@ -154,8 +176,10 @@ impl MainWindow {
 
     fn on_moved(&self, pos: (f32, f32)) {
         trace!("moved: {:?}", pos);
-        if App::with_context(|app| app.lock().unwrap().get_snap()) {
-            //   App::get_filelist().align_to(self.hwnd());
+        let this = self.context.lock().unwrap();
+
+        if this.get_snap() {
+            App::with_filelist(|f| f.align_to(self.hwnd().into()))
         }
     }
 
@@ -187,14 +211,14 @@ impl MainWindow {
         }
 
         debug!("got {} files", list.len());
-        App::with_context(|app| {
-            let app = &mut app.lock().unwrap();
-            app.clear_list();
-            app.set_index(0);
-            app.extend_list(&list);
-        });
+        {
+            let this = &mut self.context.lock().unwrap();
+            this.clear_list();
+            this.set_index(0);
+            this.extend_list(&list);
+        }
 
-        //    App::get_filelist().populate(dir.to_str().unwrap(), &list);
+        App::with_filelist(|f| f.populate(dir.to_str().unwrap(), &list));
 
         Some(())
     }
