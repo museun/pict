@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use std::sync::{Arc, Mutex};
 use std::{mem, ptr};
 
@@ -17,6 +16,7 @@ thread_local! {
     pub static APP: Mutex<Option<Arc<App>>> = Mutex::new(None);
 }
 
+#[derive(Debug)]
 pub struct App {
     mainwindow: MainWindow,
     filelist: FileList,
@@ -40,9 +40,11 @@ impl App {
         APP.with(|app| {
             let app = &mut *app.lock().expect("unwrap at set app");
             if app.is_none() {
-                *app = Some(Arc::clone(&this))
+                *app = Some(Arc::clone(&this));
             }
         });
+
+        this.mainwindow.window.show();
 
         this
     }
@@ -84,24 +86,24 @@ impl App {
             .into()
     }
 
-    pub fn with_mainwindow<T>(f: impl Fn(&MainWindow) -> T) -> T {
+    pub fn with_mainwindow<T>(f: impl Fn(&MainWindow) -> T) -> Option<T> {
         APP.with(|app| {
             let this = &*app.lock().expect("unwrap at with_mainwindow");
             if let Some(this) = this.as_ref() {
-                f(&this.mainwindow)
+                Some(f(&this.mainwindow))
             } else {
-                panic!("invalid state getting mainwindow");
+                None
             }
         })
     }
 
-    pub fn with_filelist<T>(f: impl Fn(&FileList) -> T) -> T {
+    pub fn with_filelist<T>(f: impl Fn(&FileList) -> T) -> Option<T> {
         APP.with(|app| {
             let this = &*app.lock().expect("unwrap at with_filelist");
             if let Some(this) = this.as_ref() {
-                f(&this.filelist)
+                Some(f(&this.filelist))
             } else {
-                panic!("invalid state getting filelist");
+                None
             }
         })
     }
@@ -121,11 +123,11 @@ impl App {
         }
 
         if ev.hwnd == main {
-            App::with_mainwindow(|m| m.handle(&ev.event))
+            App::with_mainwindow(|m| m.handle(&ev.event));
         }
 
         if ev.hwnd == list {
-            App::with_filelist(|m| m.handle(&ev.event))
+            App::with_filelist(|m| m.handle(&ev.event));
         }
     }
 

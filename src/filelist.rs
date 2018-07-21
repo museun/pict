@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use std::sync::{Arc, Mutex};
 use std::{mem, ptr, str};
 
@@ -11,6 +10,7 @@ lazy_static! {
     };
 }
 
+#[derive(Debug)]
 pub struct FileList {
     pub(crate) window: Window,
     listview: ListView,
@@ -34,6 +34,7 @@ impl FileList {
         LIST_HWND.with(|hwnd| {
             let mut this = hwnd.lock().unwrap();
             if this.is_none() {
+                debug!("setting list_hwnd");
                 *this = Some(window.hwnd())
             }
         });

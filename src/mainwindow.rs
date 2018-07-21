@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -11,6 +10,7 @@ lazy_static! {
     };
 }
 
+#[derive(Debug)]
 pub struct MainWindow {
     pub(crate) window: Window,
     context: Arc<Mutex<Context>>,
@@ -40,7 +40,6 @@ impl MainWindow {
                 *this = Some(window.hwnd())
             }
         });
-        window.show();
         Self { window, context }
     }
 
@@ -169,48 +168,54 @@ impl MainWindow {
         let this = self.context.lock().unwrap();
 
         if this.get_snap() {
-            App::with_filelist(|f| f.align_to(self.hwnd().into()))
+            App::with_filelist(|f| f.align_to(self.hwnd().into()));
         }
     }
 
     // TODO determine if we actually need to handle errors, instead of silently bailing
-    fn on_drop_file(&self, path: &PathBuf) -> Option<()> {
+    fn on_drop_file<P: Into<PathBuf>>(&self, path: P) {
+        fn inner(dir: &PathBuf) -> Option<Vec<(String, usize)>> {
+            debug!("file drop directory: {:?}", dir.to_str());
+            let mut list = vec![]; // TODO set the capacity for this.
+            for entry in fs::read_dir(&dir).ok()? {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if !path.is_dir() {
+                    // this does contain path/filename
+                    // let len = path.iter().collect::<Vec<_>>().len();
+                    // let res = path.iter().skip(len - 2).take(1).next().unwrap();
+                    // let parent: PathBuf = res.into();
+                    // let file = parent.join(path.file_name()?).to_str()?.to_string();
+
+                    let file = path.file_name()?.to_str()?.to_string();
+                    if is_accepted_image_type(&file) {
+                        list.push((file, entry.metadata().ok()?.len() as usize));
+                    }
+                }
+            }
+            Some(list)
+        }
+
+        let path = &path.into();
         let dir = if path.is_dir() {
             path
         } else {
-            path.parent()?
+            path.parent().expect("to get parent path") // maybe this'll fail on UNC. idk
         };
 
-        debug!("file drop directory: {:?}", dir.to_str());
-        let mut list = vec![]; // TODO set the capacity for this.
-        for entry in fs::read_dir(&dir).ok()? {
-            let entry = entry.ok()?;
-            let path = entry.path();
-            if !path.is_dir() {
-                // this does contain path/filename
-                // let len = path.iter().collect::<Vec<_>>().len();
-                // let res = path.iter().skip(len - 2).take(1).next().unwrap();
-                // let parent: PathBuf = res.into();
-                // let file = parent.join(path.file_name()?).to_str()?.to_string();
-
-                let file = path.file_name()?.to_str()?.to_string();
-                if is_accepted_image_type(&file) {
-                    list.push((file, entry.metadata().ok()?.len() as usize));
-                }
+        if let Some(list) = inner(&path) {
+            debug!("got {} files", list.len());
+            {
+                let this = &mut self.context.lock().unwrap();
+                this.clear_list();
+                this.set_index(0);
+                this.extend_list(&list);
             }
+
+            App::with_filelist(|f| f.populate(dir.to_str().unwrap(), &list));
+        } else {
+            error!("cannot get a file listing for: {}", path.to_str().unwrap())
         }
-
-        debug!("got {} files", list.len());
-        {
-            let this = &mut self.context.lock().unwrap();
-            this.clear_list();
-            this.set_index(0);
-            this.extend_list(&list);
-        }
-
-        App::with_filelist(|f| f.populate(dir.to_str().unwrap(), &list));
-
-        Some(())
     }
 
     pub fn handle(&self, ev: &EventType) {
@@ -222,7 +227,7 @@ impl MainWindow {
             EventType::Moved { x, y } => {}
             EventType::Moving { x, y } => {}
             EventType::DropFile { ref file } => {
-                // got file
+                self.on_drop_file(&file);
             }
             _ => return,
         }

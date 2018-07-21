@@ -2,6 +2,7 @@ use std::{mem, ptr};
 
 use common::*;
 
+#[derive(Debug)]
 pub struct Window {
     hwnd: HWND,
 }

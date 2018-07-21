@@ -1,5 +1,6 @@
 use common::*;
 
+#[derive(Debug)]
 pub struct Context {
     list: Vec<String>,
     index: usize,
