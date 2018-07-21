@@ -41,7 +41,6 @@ impl Context {
     }
 
     pub fn get_snap(&self) -> bool {
-        trace!("getting snap: {}", self.snap);
         self.snap
     }
 

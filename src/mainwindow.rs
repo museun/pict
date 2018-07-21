@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use common::*;
@@ -84,11 +84,19 @@ impl MainWindow {
     fn toggle_filelist(&self) {
         debug!("toggling filelist");
 
+        let snap = {
+            let this = self.context.lock().unwrap();
+            this.get_snap()
+        };
+
         App::with_filelist(|f| {
             if f.is_visible() {
-                f.hide()
+                f.hide();
             } else {
-                f.show()
+                f.show();
+                if snap {
+                    f.align_to(self.hwnd().into());
+                }
             }
         });
     }
@@ -129,7 +137,13 @@ impl MainWindow {
     }
 
     fn on_key_down(&self, key: &Key) {
-        trace!("on keydown: {:?}", key);
+        match key {
+            Key::Other(_) => return,
+            _ => {
+                trace!("on keydown: {:?}", key);
+            }
+        };
+
         match *key {
             Key::A => self.previous(),
             Key::D => self.next(),
@@ -146,27 +160,25 @@ impl MainWindow {
         }
     }
 
-    fn on_mouse_down(&self, button: &MouseButton) {
+    fn on_mouse_down(&self, button: &MouseButton, pos: (i32, i32)) {
         // middle click is for panning
         // right click will do nothing
         // left click maybe gets forwarded to containing controls?
-        trace!("click: {:?}", button)
+        trace!("click: {:?} {},{}", button, pos.0, pos.1)
     }
 
-    fn on_mouse_wheel(&self, delta: i32) {
+    fn on_mouse_wheel(&self, delta: i16, pos: (i32, i32)) {
         // zoom in and out
-        trace!("scroll: {:?}", delta)
+        trace!("scroll: {:?} {},{}", delta, pos.0, pos.1)
     }
 
-    fn on_resize(&self, size: (f32, f32)) {
-        // resize the canvas
-        trace!("resized: {:?}", size)
-    }
+    // fn on_resize(&self, size: (i32, i32)) {
+    //     // resize the canvas
+    //     trace!("resized: {:?}", size)
+    // }
 
-    fn on_moved(&self, pos: (f32, f32)) {
-        trace!("moved: {:?}", pos);
+    fn on_moving(&self, pos: (i32, i32)) {
         let this = self.context.lock().unwrap();
-
         if this.get_snap() {
             App::with_filelist(|f| f.align_to(self.hwnd().into()));
         }
@@ -174,7 +186,7 @@ impl MainWindow {
 
     // TODO determine if we actually need to handle errors, instead of silently bailing
     fn on_drop_file<P: Into<PathBuf>>(&self, path: P) {
-        fn inner(dir: &PathBuf) -> Option<Vec<(String, usize)>> {
+        fn inner(dir: &Path) -> Option<Vec<(String, usize)>> {
             debug!("file drop directory: {:?}", dir.to_str());
             let mut list = vec![]; // TODO set the capacity for this.
             for entry in fs::read_dir(&dir).ok()? {
@@ -203,7 +215,7 @@ impl MainWindow {
             path.parent().expect("to get parent path") // maybe this'll fail on UNC. idk
         };
 
-        if let Some(list) = inner(&path) {
+        if let Some(list) = inner(dir) {
             debug!("got {} files", list.len());
             {
                 let this = &mut self.context.lock().unwrap();
@@ -219,52 +231,15 @@ impl MainWindow {
     }
 
     pub fn handle(&self, ev: &EventType) {
-        match ev {
-            EventType::MouseMove { x, y } => {}
-            EventType::MouseDown { button, x, y } => trace!("{:?} click: {},{}", button, x, y),
-            EventType::MouseWheel { delta, x, y } => trace!("mouse wheel: {} {},{}", delta, x, y),
-            EventType::KeyDown { ref key } => trace!("key down: {:?}", key),
-            EventType::Moved { x, y } => {}
-            EventType::Moving { x, y } => {}
-            EventType::DropFile { ref file } => {
-                self.on_drop_file(&file);
-            }
+        match *ev {
+            //EventType::MouseMove { x, y } => {}
+            EventType::MouseDown { ref button, x, y } => self.on_mouse_down(button, (x, y)),
+            EventType::MouseWheel { delta, x, y } => self.on_mouse_wheel(delta, (x, y)),
+            EventType::KeyDown { ref key } => self.on_key_down(key),
+            //EventType::Moved { x, y } => {}
+            EventType::Moving { x, y } => self.on_moving((x, y)),
+            EventType::DropFile { ref file } => self.on_drop_file(&file),
             _ => return,
         }
     }
 }
-
-// use winit::WindowEvent as E;
-
-// match *ev {
-//     E::KeyboardInput { input, .. } => {
-//         if input.state == winit::ElementState::Pressed {
-//             if let Some(key) = input.virtual_keycode {
-//                 self.on_key_down(key, input.modifiers);
-//             }
-//         }
-//     }
-//     E::DroppedFile(ref path) => {
-//         self.on_drop_file(&path);
-//     }
-//     E::CustomMove(left, top, right, bottom) => {
-//         eprintln!("{},{},{},{}", left, right, top, bottom);
-//     }
-
-//     E::Moved(pos) => self.on_moved(pos),
-//     E::MouseWheel {
-//         delta, modifiers, ..
-//     } => self.on_mouse_wheel(delta, modifiers),
-//     E::MouseInput {
-//         state,
-//         button,
-//         modifiers,
-//         ..
-//     } => {
-//         if state == winit::ElementState::Pressed {
-//             self.on_mouse_down(button, modifiers);
-//         }
-//     }
-//     E::Resized(size) => self.on_resize(size),
-//     _ => {}
-// };

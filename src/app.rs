@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::{mem, ptr};
 
 use common::*;
@@ -13,7 +13,7 @@ thread_local!{
 }
 
 thread_local! {
-    pub static APP: Mutex<Option<Arc<App>>> = Mutex::new(None);
+    pub static APP: RwLock<Option<Arc<App>>> = RwLock::new(None);
 }
 
 #[derive(Debug)]
@@ -38,14 +38,14 @@ impl App {
         });
 
         APP.with(|app| {
-            let app = &mut *app.lock().expect("unwrap at set app");
+            let app = &mut *app.write().expect("unwrap at set app");
             if app.is_none() {
                 *app = Some(Arc::clone(&this));
             }
         });
 
         this.mainwindow.window.show();
-
+        this.filelist.align_to(this.mainwindow.hwnd().into());
         this
     }
 
@@ -88,7 +88,7 @@ impl App {
 
     pub fn with_mainwindow<T>(f: impl Fn(&MainWindow) -> T) -> Option<T> {
         APP.with(|app| {
-            let this = &*app.lock().expect("unwrap at with_mainwindow");
+            let this = &*app.read().expect("unwrap at with_mainwindow");
             if let Some(this) = this.as_ref() {
                 Some(f(&this.mainwindow))
             } else {
@@ -99,7 +99,7 @@ impl App {
 
     pub fn with_filelist<T>(f: impl Fn(&FileList) -> T) -> Option<T> {
         APP.with(|app| {
-            let this = &*app.lock().expect("unwrap at with_filelist");
+            let this = &*app.read().expect("unwrap at with_filelist");
             if let Some(this) = this.as_ref() {
                 Some(f(&this.filelist))
             } else {
@@ -114,7 +114,7 @@ impl App {
 
         if ev.event == EventType::CloseRequest && ev.hwnd == main {
             APP.with(|app| {
-                if let Some(app) = app.lock().unwrap().as_ref() {
+                if let Some(app) = app.read().unwrap().as_ref() {
                     app.save()
                 }
             });

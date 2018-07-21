@@ -72,8 +72,13 @@ impl ListView {
                 &lvc as *const _ as minwindef::LPARAM,
             );
 
-            winuser::SendMessageW(hwnd, LVM_SETBKCOLOR, 0, wingdi::RGB(0, 0, 0) as isize);
-            winuser::SendMessageW(hwnd, LVM_SETTEXTBKCOLOR, 0, wingdi::RGB(0, 0, 0) as isize);
+            winuser::SendMessageW(hwnd, LVM_SETBKCOLOR, 0, wingdi::RGB(50, 50, 50) as isize);
+            winuser::SendMessageW(
+                hwnd,
+                LVM_SETTEXTBKCOLOR,
+                0,
+                wingdi::RGB(65, 65, 65) as isize,
+            );
             winuser::SendMessageW(
                 hwnd,
                 LVM_SETTEXTCOLOR,
@@ -136,9 +141,7 @@ impl ListView {
     }
 
     pub fn clear(&self) {
-        unsafe {
-            winuser::SendMessageW(self.hwnd, commctrl::LVM_DELETEALLITEMS, 0, 0);
-        }
+        unsafe { winuser::SendMessageW(self.hwnd, commctrl::LVM_DELETEALLITEMS, 0, 0) };
     }
 
     pub fn add_item(&self, name: &str, size: usize, index: usize) {

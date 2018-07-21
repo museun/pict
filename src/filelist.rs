@@ -86,10 +86,8 @@ impl FileList {
 
         let images = files.to_vec();
         self.set_title(&dir);
-        for item in &images {
-            self.listview.add_item(&item.0, item.1, {
-                self.context.lock().unwrap().get_index() // XXX: does this really need to do this?
-            });
+        for (i, item) in images.iter().enumerate() {
+            self.listview.add_item(&item.0, item.1, i);
         }
     }
 
@@ -160,8 +158,13 @@ impl FileList {
     }
 
     pub fn handle(&self, ev: &EventType) {
-        match ev {
+        match *ev {
             EventType::CloseRequest => self.hide(),
+            EventType::Moved { .. }
+            | EventType::Moving { .. }
+            | EventType::Resizing { .. }
+            | EventType::Resize { .. } => self.on_resized(),
+            EventType::Notify { ref lp } => self.on_notify(*lp),
             _ => return,
         }
     }
