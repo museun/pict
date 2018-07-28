@@ -13,6 +13,7 @@ pub enum EventType {
     MouseMove { x: i32, y: i32 },                      // done
     MouseDown { button: MouseButton, x: i32, y: i32 }, // done
     MouseWheel { delta: i16, x: i32, y: i32 },         // done
+    HScroll { wp: usize, lp: isize },                  // done
     KeyDown { key: Key },                              // done
     Moved { x: i32, y: i32 },                          // done
     Moving { x: i32, y: i32 },                         // done
@@ -20,6 +21,8 @@ pub enum EventType {
     Resize { width: i32, height: i32 },                // ?
     DropFile { file: String },                         // done
     Notify { lp: isize },                              // done | actually an LPARAM
+
+    CtrlColorStatic { wp: usize, lp: isize }, // ?
 }
 
 #[derive(Debug, PartialEq)]

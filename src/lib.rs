@@ -36,3 +36,5 @@ mod context;
 pub use app::App;
 
 mod event;
+
+mod trackbar;

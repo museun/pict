@@ -108,7 +108,7 @@ impl App {
         })
     }
 
-    pub fn handle(ev: &Event) {
+    pub fn handle(ev: &Event) -> isize {
         let main: ::window::HWND = Self::main_hwnd();
         let list: ::window::HWND = Self::list_hwnd();
 
@@ -123,12 +123,14 @@ impl App {
         }
 
         if ev.hwnd == main {
-            App::with_mainwindow(|m| m.handle(&ev.event));
+            return App::with_mainwindow(|m| m.handle(&ev.event)).unwrap();
         }
 
         if ev.hwnd == list {
-            App::with_filelist(|m| m.handle(&ev.event));
+            App::with_filelist(|m| m.handle(&ev.event)); // this doesn't return yet
         }
+
+        0
     }
 
     fn save(&self) {

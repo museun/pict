@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use rand::prelude::*;
 
 use common::*;
+use trackbar::Trackbar;
 
 lazy_static! {
     static ref MAIN_CLASS: () = {
@@ -15,6 +16,7 @@ lazy_static! {
 #[derive(Debug)]
 pub struct MainWindow {
     pub(crate) window: Window,
+    trackbar: Trackbar,
     context: Arc<Mutex<Context>>,
 }
 
@@ -42,7 +44,16 @@ impl MainWindow {
         });
 
         window.set_size(conf.size.w, conf.size.h);
-        Self { window, context }
+        let trackbar = Trackbar::new(window.hwnd());
+
+        let this = Self {
+            window,
+            context,
+            trackbar,
+        };
+
+        this.reposition_trackbar();
+        this
     }
 
     pub fn hwnd(&self) -> HWND {
@@ -193,6 +204,8 @@ impl MainWindow {
     // }
 
     fn on_moving(&self, _pos: (i32, i32)) {
+        self.reposition_trackbar();
+
         let this = self.context.lock().unwrap();
         if this.get_snap() {
             App::with_filelist(|f| f.align_to(self.hwnd().into()));
@@ -245,16 +258,104 @@ impl MainWindow {
         }
     }
 
-    pub fn handle(&self, ev: &EventType) {
+    fn on_hscroll(&self, wp: usize, lp: isize) {
+        use winapi::um::commctrl::*;
+
+        unsafe {
+            match minwindef::LOWORD(wp as u32) as usize {
+                TB_ENDTRACK | TB_PAGEDOWN | TB_PAGEUP => {
+                    winuser::SendMessageW(self.trackbar.hwnd().into(), TBM_GETPOS, 0, 0);
+                }
+                TB_LINEDOWN | TB_LINEUP | TB_THUMBPOSITION => {
+                    let current = { self.context.lock().unwrap().get_frame_index() };
+                    winuser::SendMessageW(
+                        self.trackbar.hwnd().into(),
+                        TBM_SETPOS,
+                        0,
+                        current as isize,
+                    );
+                }
+                TB_THUMBTRACK => {
+                    let pos = minwindef::HIWORD(wp as u32);
+                    trace!("got pos: {}", 0)
+                    // use pos
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn on_color_static(&self, wp: usize, lp: isize) -> isize {
+        use std::mem;
+        use winapi::um::wingdi;
+
+        use winapi::ctypes;
+
+        unsafe {
+            mem::transmute::<*mut ctypes::c_void, minwindef::LRESULT>(wingdi::GetStockObject(
+                wingdi::WHITE_BRUSH as i32,
+            ))
+        }
+    }
+
+    fn set_max_steps(&self, n: usize) {
+        use winapi::um::commctrl::*;
+
+        unsafe {
+            let hwnd = self.trackbar.hwnd().into();
+            winuser::SendMessageW(hwnd, TBM_SETPAGESIZE, 0, 1);
+            winuser::SendMessageW(hwnd, TBM_SETRANGEMIN, 0, 0);
+            winuser::SendMessageW(hwnd, TBM_SETRANGEMAX, 0, n as isize);
+            winuser::ShowWindow(hwnd, winuser::SW_SHOW);
+        }
+    }
+
+    fn reposition_trackbar(&self) {
+        unsafe {
+            let mut rect: windef::RECT = ::std::mem::zeroed();
+            winuser::GetClientRect(self.hwnd().into(), &mut rect);
+            winuser::SetWindowPos(
+                self.trackbar.hwnd().into(),
+                winuser::HWND_TOP,
+                10,
+                rect.bottom - 20,
+                rect.right - 20,
+                20,
+                winuser::SWP_NOACTIVATE | winuser::SWP_SHOWWINDOW,
+            );
+        }
+    }
+
+    pub fn handle(&self, ev: &EventType) -> isize {
         match *ev {
             //EventType::MouseMove { x, y } => {}
-            EventType::MouseDown { ref button, x, y } => self.on_mouse_down(button, (x, y)),
-            EventType::MouseWheel { delta, x, y } => self.on_mouse_wheel(delta, (x, y)),
-            EventType::KeyDown { ref key } => self.on_key_down(key),
+            EventType::MouseDown { ref button, x, y } => {
+                self.on_mouse_down(button, (x, y));
+                0
+            }
+            EventType::MouseWheel { delta, x, y } => {
+                self.on_mouse_wheel(delta, (x, y));
+                0
+            }
+            EventType::KeyDown { ref key } => {
+                self.on_key_down(key);
+                0
+            }
             //EventType::Moved { x, y } => {}
-            EventType::Moving { x, y } => self.on_moving((x, y)),
-            EventType::DropFile { ref file } => self.on_drop_file(&file),
-            _ => return,
+            EventType::Moving { x, y } => {
+                self.on_moving((x, y));
+                0
+            }
+            EventType::DropFile { ref file } => {
+                self.on_drop_file(&file);
+                0
+            }
+            EventType::HScroll { wp, lp } => {
+                self.on_hscroll(wp, lp);
+                0
+            }
+            EventType::CtrlColorStatic { wp, lp } => self.on_color_static(wp, lp),
+            _ => 0,
         }
     }
 }

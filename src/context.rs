@@ -5,6 +5,7 @@ pub struct Context {
     list: Vec<String>,
     index: usize,
     snap: bool,
+    frame: usize,
 }
 
 impl Default for Context {
@@ -20,6 +21,7 @@ impl Context {
         Self {
             list: vec![],
             index: 0,
+            frame: 0,
             snap: conf.filelist.snap,
         }
     }
@@ -38,6 +40,16 @@ impl Context {
     pub fn set_index(&mut self, index: usize) {
         trace!("setting index: {}", index);
         self.index = index
+    }
+
+    pub fn get_frame_index(&self) -> usize {
+        trace!("getting frame: {}", self.index);
+        self.frame
+    }
+
+    pub fn set_frame_index(&mut self, pos: usize) {
+        trace!("setting frame: {}", pos);
+        self.frame = pos
     }
 
     pub fn get_snap(&self) -> bool {

@@ -125,13 +125,10 @@ pub unsafe extern "system" fn callback(
     use winapi::um::winuser::*;
     match msg {
         WM_NCCREATE => commctrl::DefSubclassProc(hwnd, msg, wp, lp),
-        WM_CLOSE => {
-            App::handle(&Event {
-                event: EventType::CloseRequest,
-                hwnd: target,
-            });
-            0
-        }
+        WM_CLOSE => App::handle(&Event {
+            event: EventType::CloseRequest,
+            hwnd: target,
+        }),
         winuser::WM_WINDOWPOSCHANGED => {
             let pos = lp as *const WINDOWPOS;
             if (*pos).flags & SWP_NOMOVE != SWP_NOMOVE {
@@ -139,9 +136,10 @@ pub unsafe extern "system" fn callback(
                 App::handle(&Event {
                     event: EventType::Moved { x, y },
                     hwnd: target,
-                });
+                })
+            } else {
+                commctrl::DefSubclassProc(hwnd, msg, wp, lp)
             }
-            commctrl::DefSubclassProc(hwnd, msg, wp, lp)
         }
 
         WM_WINDOWPOSCHANGING => {
@@ -151,9 +149,10 @@ pub unsafe extern "system" fn callback(
                 App::handle(&Event {
                     event: EventType::Moving { x, y },
                     hwnd: target,
-                });
+                })
+            } else {
+                0
             }
-            0
         }
 
         WM_KEYDOWN => {
@@ -161,8 +160,7 @@ pub unsafe extern "system" fn callback(
             App::handle(&Event {
                 event: EventType::KeyDown { key },
                 hwnd: target,
-            });
-            0
+            })
         }
 
         WM_LBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDOWN => {
@@ -172,8 +170,7 @@ pub unsafe extern "system" fn callback(
             App::handle(&Event {
                 event: EventType::MouseDown { button, x, y },
                 hwnd: target,
-            });
-            0
+            })
         }
 
         WM_MOUSEMOVE => {
@@ -182,8 +179,7 @@ pub unsafe extern "system" fn callback(
             App::handle(&Event {
                 event: EventType::MouseMove { x, y },
                 hwnd: target,
-            });
-            0
+            })
         }
 
         WM_MOUSEWHEEL => {
@@ -193,8 +189,7 @@ pub unsafe extern "system" fn callback(
             App::handle(&Event {
                 event: EventType::MouseWheel { delta, x, y },
                 hwnd: target,
-            });
-            0
+            })
         }
 
         WM_DROPFILES => {
@@ -223,14 +218,20 @@ pub unsafe extern "system" fn callback(
             0
         }
 
-        WM_NOTIFY => {
-            App::handle(&Event {
-                event: EventType::Notify { lp },
-                hwnd: target,
-            });
+        WM_NOTIFY => App::handle(&Event {
+            event: EventType::Notify { lp },
+            hwnd: target,
+        }),
 
-            0
-        }
+        WM_HSCROLL => App::handle(&Event {
+            event: EventType::HScroll { wp, lp },
+            hwnd: target,
+        }),
+
+        WM_CTLCOLORSTATIC => App::handle(&Event {
+            event: EventType::CtrlColorStatic { wp, lp },
+            hwnd: target,
+        }),
 
         WM_DESTROY => {
             winuser::PostQuitMessage(0);
